@@ -229,7 +229,7 @@ export const loadUserData = (): any | null => {
       return null;
     }
     
-    return data;
+    return ensureUserId(data);
   } catch (error) {
     console.warn('Failed to load user data:', error);
     return null;

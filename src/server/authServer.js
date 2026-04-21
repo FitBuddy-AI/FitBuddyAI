@@ -222,8 +222,7 @@ app.get('/api/admin/users', adminUsersLimiter, async (req, res) => {
     if (supabase) {
       const { data, error } = await supabase.from('fitbuddyai_userdata').select('*').order('created_at', { ascending: false });
       if (error) return res.status(500).json({ message: 'Failed to fetch users from Supabase', detail: error.message });
-      const normalized = (data || []).map(u => ({ ...u, avatar: (u.avatar || u.avatar_url || '') }));
-      return res.json({ users: normalized });
+      return res.json({ users: data || [] });
     }
 
     // Fallback to local users file
@@ -394,9 +393,7 @@ app.get('/api/user/:id', async (req, res) => {
         }
         if (!data) return res.status(404).json({ message: 'User not found.' });
         const { password: _password, ...userSafe } = data || {};
-        // Normalize avatar field for client compatibility (some clients expect `avatar`)
-        const normalized = { ...userSafe, avatar: (userSafe.avatar || userSafe.avatar_url || '') };
-        return res.status(200).json({ user: normalized });
+        return res.status(200).json({ user: userSafe });
       } catch (e) {
         console.error('[authServer] /api/user/:id error', e);
         return res.status(500).json({ message: 'Server error.' });
@@ -455,7 +452,6 @@ app.post('/api/user/update', userUpdateLimiter, async (req, res) => {
       if (!data) return res.status(404).json({ message: 'User not found.' });
 
       const { password: _password, ...safe } = data || {};
-      const normalized = { ...safe, avatar: (safe.avatar || safe.avatar_url || '') };
 
       // Attempt to update Supabase auth metadata (admin API when available)
       try {
@@ -472,7 +468,7 @@ app.post('/api/user/update', userUpdateLimiter, async (req, res) => {
         console.warn('[authServer] failed to update supabase auth metadata', e && e.message ? e.message : String(e));
       }
 
-      return res.status(200).json({ user: normalized });
+      return res.status(200).json({ user: safe });
     } catch (e) {
       console.error('[authServer] update user exception', e);
       return res.status(500).json({ message: 'Server error.' });

@@ -20,7 +20,7 @@ const GEMINI_API_KEY =
 // If an API key is not available in the environment, route requests to the
 // local server endpoint which should handle calling the Gemini API.
 const GEMINI_URL = GEMINI_API_KEY
-  ? `https://generativelanguage.googleapis.com/v1/models/gemini-flash-latest:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`
+  ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`
   : '/api/ai/generate';
   
 // Helper: extract a JSON block from AI text. Handles fenced ```json``` blocks,

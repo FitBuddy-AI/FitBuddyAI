@@ -10,7 +10,7 @@ leoProfanity.loadDictionary();
 
 import express from 'express';
 import userDataStoreRouter from './userDataStore.js';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import { v4 as uuidv4 } from 'uuid';
@@ -55,8 +55,8 @@ const adminUsersLimiter = rateLimit({
       if (auth === `Bearer ${adminToken}`) return `admin_token`;
     }
     
-    // Final fallback to IP
-    return req.ip || req.connection.remoteAddress || 'unknown';
+    // Final fallback to IP (use express-rate-limit helper for IPv6 compatibility)
+    return ipKeyGenerator(req);
   }
 });
 
@@ -182,8 +182,8 @@ const userBuyLimiter = rateLimit({
     } catch (err) {
       // JWT verification failed, fall back to IP
     }
-    // Fallback to IP address
-    return req.ip || req.connection.remoteAddress || 'unknown';
+    // Fallback to IP address (use express-rate-limit helper for IPv6 compatibility)
+    return ipKeyGenerator(req);
   }
 });
 
@@ -194,7 +194,7 @@ app.use(bodyParser.json());
 app.use((req, res, next) => {
   try {
     console.log(`[authServer] ${req.method} ${req.originalUrl || req.url}`);
-  } catch (e) {}
+  } catch (_e) {}
   next();
 });
 app.use(userDataStoreRouter);
@@ -392,7 +392,7 @@ app.get('/api/user/:id', async (req, res) => {
           return res.status(500).json({ message: 'Supabase error.' });
         }
         if (!data) return res.status(404).json({ message: 'User not found.' });
-        const { password, ...userSafe } = data || {};
+        const { password: _password, ...userSafe } = data || {};
         return res.status(200).json({ user: userSafe });
       } catch (e) {
         console.error('[authServer] /api/user/:id error', e);
@@ -420,7 +420,7 @@ app.post('/api/user/buy', userBuyLimiter, (req, res) => {
     if (!Array.isArray(user.inventory)) user.inventory = [];
     user.inventory.push(item);
     writeUsers(users);
-    const { password, ...userSafe } = user;
+    const { password: _password, ...userSafe } = user;
     res.json({ user: userSafe });
   } catch (err) {
     res.status(500).json({ message: 'Server error.' });
@@ -460,7 +460,7 @@ app.post('/api/user/update', userUpdateLimiter, async (req, res) => {
         } else if (supabase && typeof (supabase.auth?.updateUser) === 'function') {
           try {
             await (supabase.auth).updateUser({ data: { display_name: safe.username, username: safe.username } });
-          } catch (e) {}
+          } catch (_e) {}
         } else {
           console.warn('[authServer] supabase auth admin update not available');
         }
@@ -635,7 +635,7 @@ app.post('/api/rickroll', async (req, res) => {
   try {
     const auth = String(req.headers.authorization || '');
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-    let providedUserId = req.body?.userId || null;
+    const providedUserId = req.body?.userId || null;
     let verified = false;
     let decodedId = null;
 
@@ -750,7 +750,7 @@ app.post('/api/ai/generate', async (req, res) => {
       if (!allowMock) return res.status(500).json({ message: 'AI provider not configured', diagnostic: { env_GEMINI_API_KEY_present: false } });
       console.warn('[authServer] GEMINI_API_KEY missing — returning local mock response (development)');
       const today = new Date().toISOString().split('T')[0];
-      const mockPlan = {
+      const _mockPlan = {
         id: `mock-${Date.now()}`,
         name: 'Local Mock Plan',
         description: 'This is a local mock workout plan used when GEMINI API key is not configured.',
@@ -793,7 +793,7 @@ app.post('/api/ai/generate', async (req, res) => {
       if (!generatedText || String(generatedText).trim().length === 0) {
         console.warn('[authServer] generatedText empty — returning deterministic fallback plan');
         const today2 = new Date().toISOString().split('T')[0];
-        const fallbackPlan = {
+        const _fallbackPlan = {
           id: `fallback-${Date.now()}`,
           name: 'Fallback Plan (empty AI response)',
           description: 'Returned because the AI returned an empty result. Configure GEMINI_API_KEY or inspect server logs.',
@@ -1076,7 +1076,7 @@ function processActionForUser(user, action, users, res) {
     } catch (sErr) { /* best-effort */ }
 
     writeUsers(users);
-    const { password, ...userSafe } = user;
+    const { password: _password, ...userSafe } = user;
     const resp = { user: userSafe, applied: action.summary || 'Applied updates.' };
     if (planDiffSummary) resp.planDiffSummary = planDiffSummary;
     return res.json(resp);
@@ -1088,7 +1088,9 @@ function processActionForUser(user, action, users, res) {
 
 app.post('/api/auth/signup', (req, res) => {
   try {
-    let { email, username, password } = req.body;
+    let { email } = req.body;
+    const username = req.body.username;
+    const password = req.body.password;
     if (!email || !username || !password) return res.status(400).json({ message: 'All fields are required.' });
     email = String(email).trim().toLowerCase();
     if (leoProfanity.check(username) || isUsernameBanned(username)) return res.status(400).json({ message: 'Username contains inappropriate or banned words.' });
@@ -1120,7 +1122,8 @@ app.post('/api/auth/signup', (req, res) => {
 
 app.post('/api/auth/signin', (req, res) => {
   try {
-    let { email, password } = req.body;
+    let { email } = req.body;
+    const password = req.body.password;
     if (!email || !password) return res.status(400).json({ message: 'Email and password required.' });
     email = String(email).trim().toLowerCase();
     const users = readUsers();

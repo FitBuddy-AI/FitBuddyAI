@@ -42,11 +42,11 @@ const EmailVerifyPage: React.FC = () => {
                 try {
                   await supabase.auth.resetPasswordForEmail(email);
                   setResendMessage('Verification email resent — check your inbox (and spam).');
-                } catch (e) {
+                } catch (_e) {
                   setResendMessage('Failed to resend verification email. Contact support.');
                 }
               }
-            } catch (e) {
+            } catch (_e) {
               setResendMessage('Failed to resend verification email. Contact support.');
             }
             setResendLoading(false);

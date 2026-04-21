@@ -345,7 +345,7 @@ const WorkoutModal: React.FC<WorkoutModalProps> = ({
       }
       d.setHours(0,0,0,0);
       return d.toISOString().split('T')[0];
-    } catch (e) { return '' }
+    } catch (_e) { return '' }
   };
   const workoutYMD = normalizeToYMD(workout.date);
   const todayYMD = normalizeToYMD(new Date());

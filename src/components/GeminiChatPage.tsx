@@ -256,7 +256,7 @@ const GeminiChatPage: React.FC<GeminiChatPageProps> = ({ userData }) => {
         if (!raw) return;
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length) setMessages(parsed);
-      } catch (e) {
+      } catch (_e) {
         isRestoringRef.current = false;
         // ignore restore errors
       }
@@ -279,7 +279,7 @@ const GeminiChatPage: React.FC<GeminiChatPageProps> = ({ userData }) => {
         if (!raw) return;
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length) setMessages(parsed);
-      } catch (e) {
+      } catch (_e) {
         isRestoringRef.current = false;
         // ignore restore errors
       }
@@ -298,7 +298,7 @@ const GeminiChatPage: React.FC<GeminiChatPageProps> = ({ userData }) => {
         if (!raw) return;
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length) setMessages(parsed);
-      } catch (e) {}
+      } catch (_e) {}
     };
     window.addEventListener('fitbuddyai-open-chat', onOpen as EventListener);
     return () => window.removeEventListener('fitbuddyai-login', onLogin);
@@ -445,7 +445,7 @@ const GeminiChatPage: React.FC<GeminiChatPageProps> = ({ userData }) => {
       // Collapse multiple blank lines
       t = t.replace(/\n{3,}/g, '\n\n');
       return t.trim();
-    } catch (e) {
+    } catch (_e) {
       return text;
     }
   };
@@ -467,7 +467,7 @@ const GeminiChatPage: React.FC<GeminiChatPageProps> = ({ userData }) => {
   const { getAuthToken, loadUserData } = await import('../services/localStorage');
   const parsed = loadUserData() || null;
   const userId = parsed?.id || parsed?.data?.id || userData?.id;
-  let token = getAuthToken() || parsed?.token || parsed?.data?.token || userData?.token || parsed?.jwt || parsed?.data?.jwt || parsed?.access_token || parsed?.data?.access_token;
+  const token = getAuthToken() || parsed?.token || parsed?.data?.token || userData?.token || parsed?.jwt || parsed?.data?.jwt || parsed?.access_token || parsed?.data?.access_token;
 
       if (!userId || userId === 'anon') {
         // No signed-in user: preserve anon chat and redirect to signin
@@ -531,7 +531,7 @@ const GeminiChatPage: React.FC<GeminiChatPageProps> = ({ userData }) => {
       const { appendChatMessage } = await import('../services/localStorage');
       const uid = userData?.id;
       appendChatMessage({ role: 'user', text, ts: Date.now() }, { userId: uid });
-    } catch (e) { /* ignore */ }
+    } catch (_e) { /* ignore */ }
 
   // Build prompt including a short user-data summary and recent conversation
   const recent = messages.concat(newUserMsg);

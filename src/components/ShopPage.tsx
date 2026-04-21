@@ -137,7 +137,7 @@ const ShopPage: React.FC<ShopPageProps> = ({ user, onPurchase, onRedeemStreakSav
     if (isStreakSaver) {
       try {
         const qty = Number((item as any).quantity ?? 1);
-        let nextInventory = Array.isArray(user.inventory) ? [...user.inventory] : [];
+        const nextInventory = Array.isArray(user.inventory) ? [...user.inventory] : [];
         const idx = nextInventory.findIndex((it: any) => String(it?.id || '').startsWith('streak-saver'));
         if (idx >= 0) {
           const existing = nextInventory[idx];
@@ -165,7 +165,7 @@ const ShopPage: React.FC<ShopPageProps> = ({ user, onPurchase, onRedeemStreakSav
     setPurchasing(null);
     if (updated) {
       try {
-        let nextInventory = Array.isArray(updated.inventory) ? [...updated.inventory] : (Array.isArray(user.inventory) ? [...user.inventory] : []);
+        const nextInventory = Array.isArray(updated.inventory) ? [...updated.inventory] : (Array.isArray(user.inventory) ? [...user.inventory] : []);
         const nextEnergy = Math.max(0, (updated.energy ?? user.energy) - item.price);
         const nextUser = { ...user, ...updated, energy: nextEnergy, inventory: nextInventory };
         saveUserData({ data: nextUser });

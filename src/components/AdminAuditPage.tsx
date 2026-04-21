@@ -44,7 +44,7 @@ const AdminPage: React.FC = () => {
               } catch {}
             }
           }
-        } catch (e) {}
+        } catch (_e) {}
 
         // Last-resort: check sessionStorage token helper
         try {
@@ -60,7 +60,7 @@ const AdminPage: React.FC = () => {
               }
             } catch {}
           }
-        } catch (e) {}
+        } catch (_e) {}
 
         setIsAllowed(false);
       })();
@@ -91,7 +91,7 @@ const AdminPage: React.FC = () => {
         const token = result?.data?.session?.access_token ?? null;
         if (token) headers['Authorization'] = `Bearer ${token}`;
       }
-    } catch (e) {
+    } catch (_e) {
       // ignore
     }
     // fallback: session token helper

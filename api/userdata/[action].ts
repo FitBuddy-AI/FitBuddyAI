@@ -5,9 +5,9 @@ export default async function actionHandler(req: any, res: any) {
     try {
       // Preferred in deployment output
       mod = await import('./index.js');
-    } catch (e) {
+    } catch (_e) {
       // Fallback to source during local dev or different resolver
-      try { mod = await import('./index'); } catch (e2) { mod = null; }
+      try { mod = await import('./index'); } catch (_e2) { mod = null; }
     }
     if (!mod || !mod.default) {
       console.error('[api/userdata/[action]] failed to load handler module (tried index.js and index)');

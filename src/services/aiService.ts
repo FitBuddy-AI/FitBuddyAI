@@ -1,4 +1,3 @@
-// Removed incorrect import of UserData from '../App'. Use the local UserData interface below.
 import { WorkoutPlan, WorkoutType } from '../types';
 import { normalizeTypesExclusiveRest } from '../utils/streakUtils';
 import { loadSavedWorkouts, SavedWorkout } from '../utils/savedLibrary';
@@ -21,9 +20,9 @@ const GEMINI_API_KEY =
 // If an API key is not available in the environment, route requests to the
 // local server endpoint which should handle calling the Gemini API.
 const GEMINI_URL = GEMINI_API_KEY
-  ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`
+  ? `https://generativelanguage.googleapis.com/v1/models/gemini-flash-latest:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`
   : '/api/ai/generate';
-
+  
 // Helper: extract a JSON block from AI text. Handles fenced ```json``` blocks,
 // top-level {...} or [...] blocks, and falls back to stripping code fences.
 const extractJSONBlock = (raw: string): string | null => {
@@ -611,7 +610,7 @@ Generate one DayWorkout JSON for ${targetDate}, type '${workoutType}', compatibl
       });
       data = await response.json();
       // Log raw provider response to help debug empty-text issues
-      try { console.log('generateWorkoutForDay: raw AI response (post-fetch):', data); } catch (e) { /* ignore */ }
+      try { console.log('generateWorkoutForDay: raw AI response (post-fetch):', data); } catch (_e) { /* ignore */ }
     } catch (err) {
       if ((err as any)?.name === 'AbortError') {
         console.warn(`generateWorkoutForDay: attempt ${attempt} timed out after ${timeoutMs}ms`);

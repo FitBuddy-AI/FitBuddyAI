@@ -33,9 +33,9 @@ export default function PrivacyPage() {
           if (userId) {
             import('../services/apiAuth').then(m2 => m2.attachAuthHeaders({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, accepted_privacy: true }) })).then(init => fetch('/api/userdata/save', init)).catch(()=>{});
           }
-        } catch (e) {}
+        } catch (_e) {}
       }).catch(()=>{});
-    } catch (e) {}
+    } catch (_e) {}
   };
 
   return (

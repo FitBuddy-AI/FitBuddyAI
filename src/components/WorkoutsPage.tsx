@@ -100,7 +100,7 @@ const WorkoutsPage: React.FC = () => {
               added += 1;
             }
           });
-          try { persistSavedNames(next); } catch (e) {}
+          try { persistSavedNames(next); } catch (_e) {}
           return next;
         });
         showFitBuddyNotification(

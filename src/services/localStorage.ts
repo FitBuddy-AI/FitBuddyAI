@@ -174,7 +174,7 @@ export const saveUserData = (userData: any, opts?: { skipBackup?: boolean }): vo
       // ignore errors reading storage
     }
     // Accept either a raw user object or a wrapper { data, token }
-    let toStore: any = {};
+    const toStore: any = {};
     if (userData && typeof userData === 'object' && ('data' in userData || 'token' in userData)) {
       // Already wrapped: only persist the non-sensitive user profile into localStorage
       toStore.data = userData.data || null;
@@ -196,7 +196,7 @@ export const saveUserData = (userData: any, opts?: { skipBackup?: boolean }): vo
       const bc = new BroadcastChannel('fitbuddyai');
       bc.postMessage({ type: 'user-update', timestamp: Date.now() });
       bc.close();
-    } catch (e) {}
+    } catch (_e) {}
     // When user signs in / user data changes, trigger backup of any existing keys
     if (!opts || !opts.skipBackup) scheduleBackup();
     // Clear the "no auto restore" guard when a user explicitly signs in (cross-tab)
@@ -494,7 +494,7 @@ export const appendChatMessage = (message: { role: string; text: string; ts?: nu
 export const setAcceptanceFlags = (accepted: { accepted_terms?: boolean; accepted_privacy?: boolean }) => {
   try {
     const rawUd = sessionStorage.getItem(STORAGE_KEYS.USER_DATA);
-    let parsed: any = rawUd ? JSON.parse(rawUd) : { data: null, timestamp: Date.now() };
+    const parsed: any = rawUd ? JSON.parse(rawUd) : { data: null, timestamp: Date.now() };
     parsed.accepted_terms = accepted.accepted_terms ?? parsed.accepted_terms ?? null;
     parsed.accepted_privacy = accepted.accepted_privacy ?? parsed.accepted_privacy ?? null;
     try { sessionStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(parsed)); } catch {}

@@ -19,11 +19,11 @@ export default function TermsModal({ onClose, onAccept }: Props) {
               const init = await import('../services/apiAuth').then(m2 => m2.attachAuthHeaders({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, accepted_terms: true, accepted_privacy: true }) }));
               await fetch('/api/userdata/save', init);
             }
-          } catch (e) { /* ignore */ }
+          } catch (_e) { /* ignore */ }
         }).catch(()=>{});
-      } catch (e) { /* ignore */ }
+      } catch (_e) { /* ignore */ }
       if (onAccept) onAccept();
-    } catch (e) {
+    } catch (_e) {
       if (onAccept) onAccept();
     }
   };

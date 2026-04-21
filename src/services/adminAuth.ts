@@ -29,7 +29,7 @@ export async function isAdminRequest(req: any): Promise<{ ok: boolean; userId?: 
           if (pubRow && pubRow.role === 'admin') return { ok: true, userId: uid };
         } catch {}
       }
-    } catch (e) {
+    } catch (_e) {
       // continue to other checks
     }
   }
@@ -68,7 +68,7 @@ export async function isAdminRequest(req: any): Promise<{ ok: boolean; userId?: 
         // ignore
       }
     }
-  } catch (e) {}
+  } catch (_e) {}
 
   return { ok: false, reason: 'not_authorized' };
 }

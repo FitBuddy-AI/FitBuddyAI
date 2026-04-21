@@ -21,7 +21,7 @@ function decodeJWT(token: string) {
         .join('')
     );
     return JSON.parse(jsonPayload);
-  } catch (e) {
+  } catch (_e) {
     return null;
   }
 }
@@ -42,7 +42,7 @@ const GoogleIdentityButton: React.FC = () => {
           onClick={async () => {
             try {
               await signInWithGoogle();
-            } catch (e) {
+            } catch (_e) {
               console.warn('[GoogleIdentityButton] signInWithGoogle failed', e);
               window.showFitBuddyNotification?.({ title: 'Sign-in Failed', message: 'Google sign-in failed. Check console for details.', variant: 'error' });
             }
@@ -96,10 +96,10 @@ const GoogleIdentityButton: React.FC = () => {
                 // Send the id_token to the server for verification / session creation
                 try {
                   await signInWithGoogleCredential(idToken);
-                } catch (e) {
+                } catch (_e) {
                   console.warn('[GoogleIdentityButton] signInWithGoogleCredential failed', e);
                 }
-              } catch (e) {
+              } catch (_e) {
                 console.warn('[GoogleIdentityButton] error handling credential', e);
               }
             },
@@ -113,7 +113,7 @@ const GoogleIdentityButton: React.FC = () => {
               width: '100%'
             });
           }
-        } catch (e) {
+        } catch (_e) {
           console.warn('[GoogleIdentityButton] failed to initialize GSI', e);
         }
       } else {
@@ -129,7 +129,7 @@ const GoogleIdentityButton: React.FC = () => {
         if (window.google && window.google.accounts && window.google.accounts.id && typeof window.google.accounts.id.cancel === 'function') {
           window.google.accounts.id.cancel();
         }
-      } catch (e) {}
+      } catch (_e) {}
     };
   }, [clientId]);
 

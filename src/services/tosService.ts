@@ -11,13 +11,17 @@ function readStore(): Record<string, AcceptRecord> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : {};
-  } catch (e) {
+  } catch (_e) {
     return {};
   }
 }
 
 function writeStore(data: Record<string, AcceptRecord>) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) { /* noop */ }
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (_e) {
+    // noop
+  }
 }
 
 export function hasAcceptedTos(userId?: string | number | undefined) {
@@ -35,7 +39,9 @@ export function hasAcceptedTos(userId?: string | number | undefined) {
       if (anon.acceptedAt) return true;
     }
     return false;
-  } catch (e) { return false; }
+  } catch (_e) {
+    return false;
+  }
 }
 
 export function hasAcceptedPrivacy(userId?: string | number | undefined) {
@@ -47,7 +53,9 @@ export function hasAcceptedPrivacy(userId?: string | number | undefined) {
     if (rec && rec.privacy) return true;
     if (anon && anon.privacy) return true;
     return false;
-  } catch (e) { return false; }
+  } catch (_e) {
+    return false;
+  }
 }
 
 export function hasAcceptedAll(userId?: string | number | undefined) {
@@ -62,9 +70,15 @@ export function acceptTos(userId?: string | number | undefined) {
     rec.tos = { acceptedAt: new Date().toISOString() };
     data[key] = rec;
     writeStore(data);
-    try { window.dispatchEvent(new CustomEvent('fitbuddyai-tos-accepted', { detail: { userId: key } })); } catch (e) { }
+    try {
+      window.dispatchEvent(new CustomEvent('fitbuddyai-tos-accepted', { detail: { userId: key } }));
+    } catch (_e) {
+      // noop
+    }
     return true;
-  } catch (e) { return false; }
+  } catch (_e) {
+    return false;
+  }
 }
 
 export function acceptPrivacy(userId?: string | number | undefined) {
@@ -75,9 +89,15 @@ export function acceptPrivacy(userId?: string | number | undefined) {
     rec.privacy = { acceptedAt: new Date().toISOString() };
     data[key] = rec;
     writeStore(data);
-    try { window.dispatchEvent(new CustomEvent('fitbuddyai-privacy-accepted', { detail: { userId: key } })); } catch (e) { }
+    try {
+      window.dispatchEvent(new CustomEvent('fitbuddyai-privacy-accepted', { detail: { userId: key } }));
+    } catch (_e) {
+      // noop
+    }
     return true;
-  } catch (e) { return false; }
+  } catch (_e) {
+    return false;
+  }
 }
 
 export function migrateAnonToUser(userId?: string | number | undefined) {
@@ -89,15 +109,33 @@ export function migrateAnonToUser(userId?: string | number | undefined) {
     const key = String(userId);
     const rec = data[key] || {};
     let changed = false;
-    if (anon.tos && !rec.tos) { rec.tos = anon.tos; changed = true; }
-    if (anon.privacy && !rec.privacy) { rec.privacy = anon.privacy; changed = true; }
+    if (anon.tos && !rec.tos) {
+      rec.tos = anon.tos;
+      changed = true;
+    }
+    if (anon.privacy && !rec.privacy) {
+      rec.privacy = anon.privacy;
+      changed = true;
+    }
     if (changed) {
       data[key] = rec;
       delete data['__anon__'];
       writeStore(data);
-      if (rec.tos) try { window.dispatchEvent(new CustomEvent('fitbuddyai-tos-accepted', { detail: { userId: key } })); } catch (e) {}
-      if (rec.privacy) try { window.dispatchEvent(new CustomEvent('fitbuddyai-privacy-accepted', { detail: { userId: key } })); } catch (e) {}
+      if (rec.tos)
+        try {
+          window.dispatchEvent(new CustomEvent('fitbuddyai-tos-accepted', { detail: { userId: key } }));
+        } catch (_e) {
+          // noop
+        }
+      if (rec.privacy)
+        try {
+          window.dispatchEvent(new CustomEvent('fitbuddyai-privacy-accepted', { detail: { userId: key } }));
+        } catch (_e) {
+          // noop
+        }
     }
     return changed;
-  } catch (e) { return false; }
+  } catch (_e) {
+    return false;
+  }
 }

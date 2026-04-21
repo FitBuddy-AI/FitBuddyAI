@@ -1,13 +1,11 @@
-import fs from 'fs';
 import path from 'path';
 
-const destDir = path.join(process.cwd(), 'node_modules', '@express-rate-limit', 'tsconfig');
-try {
-  fs.mkdirSync(destDir, { recursive: true });
-  fs.writeFileSync(path.join(destDir, 'package.json'), JSON.stringify({ name: '@express-rate-limit/tsconfig', version: '1.0.0', main: 'tsconfig.json' }, null, 2));
-  fs.writeFileSync(path.join(destDir, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2020', module: 'ESNext', skipLibCheck: true, strict: true, forceConsistentCasingInFileNames: true } }, null, 2));
-  console.log('Created @express-rate-limit/tsconfig shim in node_modules');
-} catch (e) {
-  console.error('Failed to create shim:', e);
-  process.exit(1);
-}
+// This script previously attempted to create a shim inside node_modules at
+// install time. That behavior is fragile (breaks reproducible installs,
+// fails in read-only CI environments, and hides dependency issues). Fail
+// fast here with guidance so maintainers can fix the root cause instead.
+
+const expectedPackagePath = path.join(process.cwd(), 'node_modules', '@express-rate-limit', 'tsconfig');
+console.error('Refusing to create a runtime shim in node_modules. Expected package path:', expectedPackagePath);
+console.error('Fix the root cause by installing the real package if available, pinning/upgrading the depending package, or adjusting your TypeScript configuration.');
+process.exit(1);

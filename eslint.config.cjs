@@ -1,17 +1,14 @@
-const fs = require("fs");
-const path = require("path");
-
-// Read ignores from .eslintignore (migrate to flat config ignores)
-let ignores = [];
-try {
-  const ig = fs.readFileSync(path.resolve(__dirname, ".eslintignore"), "utf8");
-  ignores = ig
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
-} catch (_e) {
-  ignores = ["node_modules/", "dist/"];
-}
+// Inline ignore patterns so lint scope does not rely on a removed .eslintignore
+const ignores = [
+  "node_modules/",
+  "dist/",
+  "public/",
+  "build/",
+  ".vite/",
+  "**/*.d.ts",
+  "coverage/",
+  ".vercel/",
+];
 
 module.exports = [
   { ignores },

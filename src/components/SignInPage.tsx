@@ -83,11 +83,11 @@ const SignInPage: React.FC = () => {
                 lastRes = null;
                 lastText = null;
                 if (attempt < maxAttempts) {
-                  console.warn(`[SignInPage] userdata POST attempt ${attempt} threw, retrying after ${delayMs}ms`, e);
+                  console.warn(`[SignInPage] userdata POST attempt ${attempt} threw, retrying after ${delayMs}ms`, _e);
                   await new Promise(r => setTimeout(r, delayMs));
                   continue;
                 }
-                throw e;
+                throw _e;
               }
             }
             return { res: lastRes, text: lastText };
@@ -108,7 +108,7 @@ const SignInPage: React.FC = () => {
             try {
               body = text ? JSON.parse(text) : null;
             } catch (_e) {
-              console.warn('[SignInPage] userdata POST returned invalid JSON; invoking restoreUserDataFromServer fallback', e);
+              console.warn('[SignInPage] userdata POST returned invalid JSON; invoking restoreUserDataFromServer fallback', _e);
               try { await restoreUserDataFromServer(data.user.id); } catch (re) { console.warn('[SignInPage] fallback restore failed:', re); }
             }
 
@@ -123,7 +123,7 @@ const SignInPage: React.FC = () => {
                 if (assessmentVal) saveAssessmentData(assessmentVal);
                 if (planVal) saveWorkoutPlan(planVal);
               } catch (_e) {
-                console.warn('Failed to save restored payload values:', e);
+                console.warn('Failed to save restored payload values:', _e);
               }
             }
           }

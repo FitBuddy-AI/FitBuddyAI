@@ -51,7 +51,7 @@ export default async function handler(req: any, res: any) {
       try {
           token = jwt.sign({ id: user.id, role: user.role }, jwtSecret, { expiresIn: '7d' });
       } catch (_e) {
-        console.warn('[api/auth/index] failed to sign jwt', e);
+        console.warn('[api/auth/index] failed to sign jwt', _e);
         token = null;
       }
       return res.json({ user: safeUser, token });

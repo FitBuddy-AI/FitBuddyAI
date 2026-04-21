@@ -43,7 +43,7 @@ const GoogleIdentityButton: React.FC = () => {
             try {
               await signInWithGoogle();
             } catch (_e) {
-              console.warn('[GoogleIdentityButton] signInWithGoogle failed', e);
+              console.warn('[GoogleIdentityButton] signInWithGoogle failed', _e);
               window.showFitBuddyNotification?.({ title: 'Sign-in Failed', message: 'Google sign-in failed. Check console for details.', variant: 'error' });
             }
           }}
@@ -97,10 +97,10 @@ const GoogleIdentityButton: React.FC = () => {
                 try {
                   await signInWithGoogleCredential(idToken);
                 } catch (_e) {
-                  console.warn('[GoogleIdentityButton] signInWithGoogleCredential failed', e);
+                  console.warn('[GoogleIdentityButton] signInWithGoogleCredential failed', _e);
                 }
               } catch (_e) {
-                console.warn('[GoogleIdentityButton] error handling credential', e);
+                console.warn('[GoogleIdentityButton] error handling credential', _e);
               }
             },
             auto_select: false,
@@ -114,7 +114,7 @@ const GoogleIdentityButton: React.FC = () => {
             });
           }
         } catch (_e) {
-          console.warn('[GoogleIdentityButton] failed to initialize GSI', e);
+          console.warn('[GoogleIdentityButton] failed to initialize GSI', _e);
         }
       } else {
         // If script hasn't loaded yet, try again shortly

@@ -192,8 +192,6 @@ npm run dev
 
 - Note on tools & scripts: Admin/migration scripts that are explicitly invoked (in `/scripts` and `.github/scripts`) may still write files by design — they are one-off tools. Runtime server endpoints and dev server code will not write user data to disk.
 
-If you want a temporary developer fallback (opt-in) instead of failing when Supabase is missing, tell me and I can add a guarded flag (e.g. `ALLOW_LOCAL_USERDATA_FALLBACK=true`) that enables the old filesystem fallback only when explicitly set.
-
 ### Getting Required API Keys
 
 #### Google Gemini API Key (server-side)

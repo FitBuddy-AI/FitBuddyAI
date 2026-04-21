@@ -222,7 +222,8 @@ app.get('/api/admin/users', adminUsersLimiter, async (req, res) => {
     if (supabase) {
       const { data, error } = await supabase.from('fitbuddyai_userdata').select('*').order('created_at', { ascending: false });
       if (error) return res.status(500).json({ message: 'Failed to fetch users from Supabase', detail: error.message });
-      return res.json({ users: data || [] });
+      const normalized = (data || []).map(u => ({ ...u, avatar: (u.avatar || u.avatar_url || '') }));
+      return res.json({ users: normalized });
     }
 
     // Fallback to local users file
@@ -393,7 +394,9 @@ app.get('/api/user/:id', async (req, res) => {
         }
         if (!data) return res.status(404).json({ message: 'User not found.' });
         const { password: _password, ...userSafe } = data || {};
-        return res.status(200).json({ user: userSafe });
+        // Normalize avatar field for client compatibility (some clients expect `avatar`)
+        const normalized = { ...userSafe, avatar: (userSafe.avatar || userSafe.avatar_url || '') };
+        return res.status(200).json({ user: normalized });
       } catch (e) {
         console.error('[authServer] /api/user/:id error', e);
         return res.status(500).json({ message: 'Server error.' });
@@ -452,6 +455,7 @@ app.post('/api/user/update', userUpdateLimiter, async (req, res) => {
       if (!data) return res.status(404).json({ message: 'User not found.' });
 
       const { password, ...safe } = data || {};
+      const normalized = { ...safe, avatar: (safe.avatar || safe.avatar_url || '') };
 
       // Attempt to update Supabase auth metadata (admin API when available)
       try {
@@ -468,7 +472,7 @@ app.post('/api/user/update', userUpdateLimiter, async (req, res) => {
         console.warn('[authServer] failed to update supabase auth metadata', e && e.message ? e.message : String(e));
       }
 
-      return res.status(200).json({ user: safe });
+      return res.status(200).json({ user: normalized });
     } catch (e) {
       console.error('[authServer] update user exception', e);
       return res.status(500).json({ message: 'Server error.' });
@@ -753,7 +757,8 @@ app.post('/api/ai/generate', async (req, res) => {
       const _mockPlan = {
         id: `mock-${Date.now()}`,
         name: 'Local Mock Plan',
-        description: 'This is a local mock workout plan used when GEMINI API key is not configured.',
+              const { password, ...userSafe } = data || {};
+              const normalized = { ...userSafe, avatar: (userSafe.avatar || userSafe.avatar_url || '') };
         startDate: today,
         endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         totalDays: 7,

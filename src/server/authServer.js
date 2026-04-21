@@ -228,7 +228,7 @@ app.get('/api/admin/users', adminUsersLimiter, async (req, res) => {
 
     // Fallback to local users file
     const users = readUsers();
-    const safe = users.map(u => { const { password, ...rest } = u; return rest; });
+    const safe = users.map(u => { const { password: _password, ...rest } = u; return rest; });
     return res.json({ users: safe });
   } catch (err) {
     console.error('[authServer] /api/admin/users error', err);
@@ -454,7 +454,7 @@ app.post('/api/user/update', userUpdateLimiter, async (req, res) => {
       }
       if (!data) return res.status(404).json({ message: 'User not found.' });
 
-      const { password, ...safe } = data || {};
+      const { password: _password, ...safe } = data || {};
       const normalized = { ...safe, avatar: (safe.avatar || safe.avatar_url || '') };
 
       // Attempt to update Supabase auth metadata (admin API when available)
@@ -1180,7 +1180,7 @@ app.get('/api/users', adminUsersLimiter, (req, res) => {
   const admin = verifyAdminFromToken(req);
     if (!admin) return res.status(403).json({ message: 'Forbidden' });
     const users = readUsers();
-    const safe = users.map(u => { const { password, ...rest } = u; return rest; });
+    const safe = users.map(u => { const { password: _password, ...rest } = u; return rest; });
     return res.json({ users: safe });
   } catch (err) {
     return res.status(500).json({ message: 'Server error.' });

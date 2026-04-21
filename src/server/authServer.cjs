@@ -86,7 +86,7 @@ function readUsers() {
     // Best-effort: fetch a small projection for admin/development uses.
     try {
       // Do not select legacy `payload` column (may not exist); fetch only a minimal projection
-      supabase.from('fitbuddyai_userdata').select('user_id, email, username, chat_history, role, banned').limit(1000).then(({ data, error }) => {
+      supabase.from('fitbuddyai_userdata').select('user_id, email, username, chat_history, role, banned').limit(1000).then(({ data: _data, error }) => {
         if (error) console.error('[authServer.cjs] readUsers supabase fetch error', error);
       });
     } catch (e) {

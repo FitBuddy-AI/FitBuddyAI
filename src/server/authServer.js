@@ -757,8 +757,6 @@ app.post('/api/ai/generate', async (req, res) => {
       const _mockPlan = {
         id: `mock-${Date.now()}`,
         name: 'Local Mock Plan',
-              const { password, ...userSafe } = data || {};
-              const normalized = { ...userSafe, avatar: (userSafe.avatar || userSafe.avatar_url || '') };
         startDate: today,
         endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         totalDays: 7,

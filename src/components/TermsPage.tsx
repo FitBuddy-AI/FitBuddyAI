@@ -25,7 +25,7 @@ export default function TermsPage() {
     if (!agreed) return;
     acceptTos(undefined);
     setAccepted(true);
-    try { burstConfetti({count: 40}); } catch (e) { /* noop */ }
+    try { burstConfetti({count: 40}); } catch (_e) { /* noop */ }
     // intentionally do not redirect; banner will hide when both accepted
     // Immediately persist acceptance to server if signed in
     try {
@@ -36,9 +36,9 @@ export default function TermsPage() {
           if (userId) {
             import('../services/apiAuth').then(m2 => m2.attachAuthHeaders({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, accepted_terms: true }) })).then(init => fetch('/api/userdata/save', init)).catch(()=>{});
           }
-        } catch (e) {}
+        } catch (_e) {}
       }).catch(()=>{});
-    } catch (e) {}
+    } catch (_e) {}
   };
 
   return (

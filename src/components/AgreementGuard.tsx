@@ -32,15 +32,15 @@ export default function AgreementGuard({ userData, children }: Props) {
 
   const handleAgree = () => {
     // Mark both as accepted locally (migrated to user if signed in by tosService)
-    try { acceptTos(userData?.id); } catch (e) { /* noop */ }
-    try { acceptPrivacy(userData?.id); } catch (e) { /* noop */ }
+    try { acceptTos(userData?.id); } catch (_e) { /* noop */ }
+    try { acceptPrivacy(userData?.id); } catch (_e) { /* noop */ }
     // If user is signed in, persist acceptance to the server as well
     if (userData?.id) {
       try {
         import('../services/apiAuth').then(m => m.attachAuthHeaders({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: userData.id, accepted_terms: true, accepted_privacy: true }) })).then(init => {
           fetch('/api/userdata/save', init).catch(() => { /* ignore server errors quietly */ });
         }).catch(() => {});
-      } catch (e) {
+      } catch (_e) {
         // ignore
       }
     }

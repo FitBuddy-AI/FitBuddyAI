@@ -73,7 +73,7 @@ const Header: React.FC<HeaderProps> = ({ profileVersion, userData }) => {
       // Node.js fallback
       // @ts-ignore
       if (typeof Buffer !== 'undefined') return Buffer.from(s, 'base64').toString('utf8');
-    } catch (e) {}
+    } catch (_e) {}
     return '';
   };
   // Try-on preview state (temporary avatar shown when user tries an avatar)
@@ -179,11 +179,11 @@ const Header: React.FC<HeaderProps> = ({ profileVersion, userData }) => {
       } else {
         document.body.classList.remove('explore-open');
       }
-    } catch (e) {
+    } catch (_e) {
       // ignore (server-side rendering / unavailable document)
     }
     return () => {
-      try { document.body.classList.remove('explore-open'); } catch (e) {}
+      try { document.body.classList.remove('explore-open'); } catch (_e) {}
     };
   }, [isDrawerVisible]);
 
@@ -227,7 +227,7 @@ const Header: React.FC<HeaderProps> = ({ profileVersion, userData }) => {
         // Node fallback
         // @ts-ignore
         if (typeof Buffer !== 'undefined') return Buffer.from(str).toString('base64');
-      } catch (e) {}
+      } catch (_e) {}
       return '';
     };
     const encA = (() => { const s = fromCodes([100,97,107,111,116,97]); return safeBtoa(s); })();
@@ -547,7 +547,7 @@ const Header: React.FC<HeaderProps> = ({ profileVersion, userData }) => {
                               const timeout = new Promise((res) => setTimeout(res, 2000));
                               await Promise.race([p, timeout]);
                             }
-                          } catch (e) {}
+                          } catch (_e) {}
 
                           // Now clear stored user and related data using helpers
                           try { clearUserData(); } catch {}

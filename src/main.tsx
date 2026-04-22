@@ -20,19 +20,19 @@ const setupUnloadHandler = () => {
           const parsed = loadUserData();
           userId = parsed?.id || parsed?.sub || parsed?.data?.id || null;
           if (!userId) return;
-        } catch (e) { return; }
+        } catch (_e) { return; }
         // Try sendBeacon first (synchronous and reliable for unload). If not available or it fails, fall back to async backup.
         try {
           const mod = await import('./services/cloudBackupService');
           const beaconOk = await mod.beaconBackupUserData(String(userId));
           if (beaconOk) return;
-        } catch (e) {}
+        } catch (_e) {}
         // Fallback (fire-and-forget) async backup
         try {
           const mod2 = await import('./services/cloudBackupService');
           mod2.backupUserDataToServer(String(userId));
-        } catch (e) {}
-      } catch (e) {}
+        } catch (_e) {}
+      } catch (_e) {}
     };
     if (!isAttached) {
       window.addEventListener('beforeunload', handler, { passive: true });
@@ -47,11 +47,11 @@ const setupUnloadHandler = () => {
             // First try backing up and deleting sensitive keys (chat, TOS), then a full backup
             try { await mod.backupAndDeleteSensitive(String(userId)); } catch {}
             try { await mod.backupUserDataToServer(String(userId)); } catch {}
-          } catch (e) {}
+          } catch (_e) {}
       });
       isAttached = true;
     }
-  } catch (e) {}
+  } catch (_e) {}
 };
 
 setupUnloadHandler();

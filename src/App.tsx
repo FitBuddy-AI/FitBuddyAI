@@ -249,7 +249,7 @@ function App() {
     }
     return () => {
       window.removeEventListener('storage', syncUser);
-      try { if (bc) { bc.close(); } } catch (e) {}
+      try { if (bc) { bc.close(); } } catch (_e) {}
     };
   }, []);
 

@@ -12,7 +12,7 @@ function main() {
       const branch = meta.githubCommitRef || meta.githubBranch || meta.branch || '';
       const matchesBranch = branch === 'development' || (d && d.meta && (d.meta['githubCommitRef'] === 'development' || d.meta['githubBranch'] === 'development'));
       return isPreview && matchesBranch;
-    } catch (e) { return false; }
+    } catch (_e) { return false; }
   });
   if (!candidates.length) {
     console.log('No matching preview deployments found for branch development.');

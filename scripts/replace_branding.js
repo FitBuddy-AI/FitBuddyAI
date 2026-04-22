@@ -29,7 +29,7 @@ const replacements = [
   { from: /FITBUDDYAI/g, to: 'FITBUDDYAI' },
 ];
 
-let changedFiles = [];
+const changedFiles = [];
 
 async function isTextFile(filePath) {
   const ext = path.extname(filePath).toLowerCase();

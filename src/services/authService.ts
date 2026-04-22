@@ -300,5 +300,5 @@ export function signOut() {
     if (supabase && typeof supabase.auth?.signOut === 'function') {
       supabase.auth.signOut().catch(() => {});
     }
-  } catch (e) {}
+  } catch (_e) {}
 }

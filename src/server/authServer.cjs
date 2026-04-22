@@ -40,7 +40,7 @@ app.use(cors());
 app.use(bodyParser.json());
 
 // Path to users.json file
-const usersFile = path.join(__dirname, 'users.json');
+const _usersFile = path.join(__dirname, 'users.json');
 
 // Get user by ID
 app.get('/api/user/:id', (req, res) => {
@@ -50,7 +50,7 @@ app.get('/api/user/:id', (req, res) => {
     const users = readUsers();
     const user = users.find(u => u.id === id);
     if (!user) return res.status(404).json({ message: 'User not found.' });
-    const { password, ...userSafe } = user;
+    const { password: _password, ...userSafe } = user;
     res.json({ user: userSafe });
   } catch (err) {
     res.status(500).json({ message: 'Server error.' });
@@ -72,7 +72,7 @@ app.post('/api/user/update', (req, res) => {
     if (avatar) user.avatar = avatar;
     writeUsers(users);
     // Do not send password back
-    const { password, ...userSafe } = user;
+    const { password: _password, ...userSafe } = user;
     res.json({ user: userSafe });
   } catch (err) {
     res.status(500).json({ message: 'Server error.' });
@@ -86,7 +86,7 @@ function readUsers() {
     // Best-effort: fetch a small projection for admin/development uses.
     try {
       // Do not select legacy `payload` column (may not exist); fetch only a minimal projection
-      supabase.from('fitbuddyai_userdata').select('user_id, email, username, chat_history, role, banned').limit(1000).then(({ data, error }) => {
+      supabase.from('fitbuddyai_userdata').select('user_id, email, username, chat_history, role, banned').limit(1000).then(({ data: _data, error }) => {
         if (error) console.error('[authServer.cjs] readUsers supabase fetch error', error);
       });
     } catch (e) {
@@ -120,7 +120,9 @@ function writeUsers(users) {
 
 app.post('/api/auth/signup', (req, res) => {
   try {
-    let { email, username, password } = req.body;
+    let { email } = req.body;
+    const username = req.body.username;
+    const password = req.body.password;
     if (!email || !username || !password) {
       res.status(400).json({ message: 'All fields are required.' });
       return;
@@ -146,7 +148,8 @@ app.post('/api/auth/signup', (req, res) => {
 
 app.post('/api/auth/signin', (req, res) => {
   try {
-    let { email, password } = req.body;
+    let { email } = req.body;
+    const password = req.body.password;
     if (!email || !password) return res.status(400).json({ message: 'Email and password required.' });
     email = String(email).trim().toLowerCase();
     const users = readUsers();
@@ -155,7 +158,7 @@ app.post('/api/auth/signin', (req, res) => {
       res.status(401).json({ message: 'Invalid email or password.' });
       return;
     }
-    const { password: pw, ...userSafe } = user;
+    const { password: _pw, ...userSafe } = user;
     res.json({ user: userSafe });
   } catch (err) {
     res.status(500).json({ message: 'Server error.' });

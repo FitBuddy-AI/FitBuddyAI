@@ -937,7 +937,7 @@ const Questionnaire: React.FC<QuestionnaireProps> = ({ onComplete }) => {
               // Generate week-by-week and concatenate dailyWorkouts
               const start = processedAnswers.startDate || new Date().toISOString().split('T')[0];
               const allWeeks: any[] = [];
-              let currentStart = new Date(start);
+              const currentStart = new Date(start);
               for (let w = 0; w < weeks; w++) {
                 const answersForWeek = { ...processedAnswers, startDate: currentStart.toISOString().split('T')[0], planDuration: '1 week (part)' };
                 try {
@@ -1456,7 +1456,7 @@ const Questionnaire: React.FC<QuestionnaireProps> = ({ onComplete }) => {
       } else {
         const start2 = currentAnswers.startDate || new Date().toISOString().split('T')[0];
         const chunks: any[] = [];
-        let cs = new Date(start2);
+        const cs = new Date(start2);
         for (let w = 0; w < weeks2; w++) {
           const answersForWeek = { ...currentAnswers, startDate: cs.toISOString().split('T')[0], planDuration: '1 week (part)'};
           const weekPlan = await generateWorkoutPlan(currentUser as UserData, answersForWeek, currentQs);

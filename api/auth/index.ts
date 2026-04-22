@@ -49,9 +49,9 @@ export default async function handler(req: any, res: any) {
       const jwtSecret = process.env.JWT_SECRET || 'dev_secret_change_me';
       let token: string | null = null;
       try {
-        token = jwt.sign({ id: user.id, role: user.role }, jwtSecret, { expiresIn: '7d' });
-      } catch (e) {
-        console.warn('[api/auth/index] failed to sign jwt', e);
+          token = jwt.sign({ id: user.id, role: user.role }, jwtSecret, { expiresIn: '7d' });
+      } catch (_e) {
+        console.warn('[api/auth/index] failed to sign jwt', _e);
         token = null;
       }
       return res.json({ user: safeUser, token });
@@ -64,7 +64,7 @@ export default async function handler(req: any, res: any) {
       const normalizedEmail = normalizeEmail(email);
       // Quick existence check to return a friendly message without attempting insert
       try {
-        const { data: existing } = await supabase.from('fitbuddyai_userdata').select('user_id,email').ilike('email', normalizedEmail).limit(1).maybeSingle();
+          const { data: existing } = await supabase.from('fitbuddyai_userdata').select('user_id,email').ilike('email', normalizedEmail).limit(1).maybeSingle();
         if (existing) return res.status(409).json({ code: 'EMAIL_EXISTS', message: 'Email already exists.' });
       } catch (e) {
         // ignore and proceed to insert; DB unique index will enforce constraint

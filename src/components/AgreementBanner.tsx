@@ -10,7 +10,7 @@ export default function AgreementBanner({ userData }: Props) {
 
   useEffect(() => {
     // If the user just signed in, migrate any anonymous acceptances into their record
-    if (userData?.id) { try { migrateAnonToUser(userData.id); } catch (e) {} }
+    if (userData?.id) { try { migrateAnonToUser(userData.id); } catch (_e) {} }
     const checkLocalThenServer = async () => {
       try {
         // local quick check
@@ -24,12 +24,12 @@ export default function AgreementBanner({ userData }: Props) {
         if (!res.ok) { setVisible(true); return; }
         const text = await res.text();
         let parsed: any = null;
-        try { parsed = text ? JSON.parse(text) : null; } catch (e) { parsed = null; }
+        try { parsed = text ? JSON.parse(text) : null; } catch (_e) { parsed = null; }
         const payload = parsed?.stored ?? parsed?.payload ?? parsed ?? {};
         // If server explicitly indicates accepted_terms and accepted_privacy, hide banner
         const serverAccepted = payload && payload.accepted_terms && payload.accepted_privacy;
         setVisible(!serverAccepted);
-      } catch (e) {
+      } catch (_e) {
         // Fallback to local check
         const accepted = hasAcceptedAll(userData?.id);
         setVisible(!accepted);

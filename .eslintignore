@@ -1,9 +1,0 @@
-node_modules/
-dist/
-public/
-build/
-.vite/
-**/*.d.ts
-/*.min.js
-coverage/
-/.vercel/

@@ -65,7 +65,7 @@ function NotificationManager() {
 export function showFitBuddyNotification(opts: NotificationOptions) {
   try {
     window.dispatchEvent(new CustomEvent(EVENT, { detail: opts }));
-  } catch (e) {
+  } catch (_e) {
     // fallback: attach directly if dispatch fails
     (window as any).lastFitBuddyNotif = opts;
   }
@@ -79,7 +79,7 @@ if (typeof window !== 'undefined' && !document.getElementById(ROOT_ID)) {
     container.id = ROOT_ID;
     document.body.appendChild(container);
     createRoot(container).render(<NotificationManager />);
-  } catch (e) {
+  } catch (_e) {
     // ignore mount errors
   }
 }

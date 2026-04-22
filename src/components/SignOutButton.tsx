@@ -16,7 +16,7 @@ const SignOutButton: React.FC = () => {
     try {
       const parsed = loadUserData();
       return parsed?.id || parsed?.sub || parsed?.data?.id || null;
-    } catch (e) {
+    } catch (_e) {
       return null;
     }
   })();
@@ -43,7 +43,7 @@ const SignOutButton: React.FC = () => {
       try { sessionStorage.removeItem('fitbuddyai_no_auto_restore'); } catch {}
       try { localStorage.removeItem('fitbuddyai_no_auto_restore'); } catch {}
     }, 3000);
-  } catch (e) {}
+  } catch (_e) {}
   };
   return (
     <button className="btn signout-btn" onClick={handleSignOut}>

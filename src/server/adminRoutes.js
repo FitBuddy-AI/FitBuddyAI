@@ -29,7 +29,7 @@ function getSupabaseAdmin() {
   }
 }
 
-router.use(express.json());
+router.use(express.json({ limit: '20mb' }));
 
 router.all('/api/admin/users', async (req, res) => {
   if (!requireAdmin(req)) return res.status(403).json({ message: 'Forbidden' });

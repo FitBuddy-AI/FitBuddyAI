@@ -1,12 +1,88 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import './GeminiChatPage.css';
 import { getAITextResponse } from '../services/aiService';
 import BackgroundDots from './BackgroundDots';
 // ActionConfirmModal removed: actions are applied automatically
 
 const ASSISTANT_GREETING = 'Hi! I am AI Coach — your AI Fitness assistant powered by Google Gemini. I can answer questions about your workouts, goals, and progress.';
-const MAX_PLAN_SNIPPET_CHARS = 500; // keep prompt small to return responses faster
+const normalizeChatText = (text: string) => {
+  if (/currently under development/i.test(String(text))) {
+    return 'AI Coach is running in demo mode right now. Configure GEMINI_API_KEY for full production responses, or ask for workout ideas, recovery tips, or a beginner-friendly routine.';
+  }
+  return text;
+};
+const MAX_PLAN_SNIPPET_CHARS = 10000; // allow richer workoutPlan context for chat personalization
 const MAX_HISTORY_MESSAGES = 12; // limit context length to speed up LLM responses
+
+const isInternalChatLink = (href: string) => href.startsWith('/') && !href.startsWith('//');
+
+const trimTrailingPunctuation = (value: string) => {
+  let end = value.length;
+  while (end > 0 && '.,!?;:)]}'.includes(value[end - 1])) {
+    end -= 1;
+  }
+  return value.slice(0, end);
+};
+
+const renderChatText = (text: string) => {
+  const output: Array<React.ReactNode> = [];
+  const source = String(text || '');
+  const tokenRegex = /(\[([^\]]+)\]\(([^)]+)\))|(https?:\/\/[^\s<>()]+|\/(?!\/)[^\s<>()]+)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenRegex.exec(source)) !== null) {
+    if (match.index > lastIndex) {
+      output.push(source.slice(lastIndex, match.index));
+    }
+
+    const markdownLabel = match[2];
+    const markdownHref = match[3];
+    const rawHref = match[4];
+    const href = trimTrailingPunctuation(markdownHref || rawHref || '');
+    const trailing = (markdownHref || rawHref || '').slice(href.length);
+    const key = `chat-link-${output.length}`;
+
+    if (markdownLabel && markdownHref) {
+      output.push(
+        isInternalChatLink(href) ? (
+          <Link key={key} to={href} className="msg-link">
+            {markdownLabel}
+          </Link>
+        ) : (
+          <a key={key} href={href} target="_blank" rel="noreferrer" className="msg-link">
+            {markdownLabel}
+          </a>
+        )
+      );
+    } else if (href) {
+      output.push(
+        isInternalChatLink(href) ? (
+          <Link key={key} to={href} className="msg-link">
+            {href}
+          </Link>
+        ) : (
+          <a key={key} href={href} target="_blank" rel="noreferrer" className="msg-link">
+            {href}
+          </a>
+        )
+      );
+    }
+
+    if (trailing) {
+      output.push(trailing);
+    }
+
+    lastIndex = tokenRegex.lastIndex;
+  }
+
+  if (lastIndex < source.length) {
+    output.push(source.slice(lastIndex));
+  }
+
+  return output.length ? output : source;
+};
 
 // Static example prompt to avoid re-allocating large strings on every send
 const EXAMPLE_PROMPT = (() => {
@@ -220,6 +296,14 @@ const GeminiChatPage: React.FC<GeminiChatPageProps> = ({ userData }) => {
   const isRestoringRef = useRef(false);
 
   useEffect(() => {
+    setMessages(current => {
+      const normalized = current.map(message => {
+        const text = normalizeChatText(message.text);
+        return text === message.text ? message : { ...message, text };
+      });
+      const changed = normalized.some((message, index) => message !== current[index]);
+      return changed ? normalized : current;
+    });
     // Scroll to bottom when messages change
     if (listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
@@ -235,7 +319,7 @@ const GeminiChatPage: React.FC<GeminiChatPageProps> = ({ userData }) => {
           const raw = sessionStorage.getItem(`fitbuddyai_chat_${uid}`);
         if (!raw) return;
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length) setMessages(parsed);
+          if (Array.isArray(parsed) && parsed.length) setMessages(parsed.map((message: any) => ({ ...message, text: normalizeChatText(message.text) })));
       } catch (err) {
         // ignore
       }
@@ -392,15 +476,11 @@ const GeminiChatPage: React.FC<GeminiChatPageProps> = ({ userData }) => {
   const summarizeUser = (u: any) => {
     if (!u) return 'No user data available.';
     try {
-      const safe = {
-        id: u.id,
-        username: u.username,
-        age: u.age,
-        goals: u.goals || u.preferences || [],
-        fitnessLevel: u.fitnessLevel || u.fitness_level || 'unknown',
-        energy: u.energy ?? null,
-        streak: u.streak ?? null
-      };
+      const sensitiveKey = /(token|access_token|refresh_token|jwt|password|secret|authorization|cookie)/i;
+      const safe = JSON.parse(JSON.stringify(u, (key, value) => {
+        if (sensitiveKey.test(String(key))) return undefined;
+        return value;
+      }));
       return JSON.stringify(safe);
     } catch {
       return 'User data present but could not be summarized.';
@@ -692,7 +772,7 @@ const GeminiChatPage: React.FC<GeminiChatPageProps> = ({ userData }) => {
                     )}
                   </div>
                 )}
-                <div className="msg-text">{m.text}</div>
+                <div className="msg-text">{renderChatText(m.text)}</div>
               </div>
             );
           })}

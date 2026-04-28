@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { saveAssessmentData, saveWorkoutPlan, saveUserData } from '../services/localStorage';
 import { signIn } from '../services/authService';
 import GoogleIdentityButton from './GoogleIdentityButton';
@@ -15,6 +15,13 @@ const SignInPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [resendModalOpen, setResendModalOpen] = useState(false);
   const [resendEmail, setResendEmail] = useState('');
+
+  useEffect(() => {
+    document.body.classList.add('signin-page-screen');
+    return () => {
+      document.body.classList.remove('signin-page-screen');
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,7 +53,6 @@ const SignInPage: React.FC = () => {
           return null;
         };
         await waitForToken(3000);
-        try { sessionStorage.setItem('fitbuddyaiUsername', data.user.username); } catch {}
         // Attempt to restore any server-stored questionnaire/workout/assessment data
         try {
           await restoreUserDataFromServer(data.user.id);

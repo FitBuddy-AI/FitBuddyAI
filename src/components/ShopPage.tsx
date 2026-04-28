@@ -28,8 +28,6 @@ const STREAK_SAVER_OPTIONS = [
   { id: 'streak-saver-5', name: 'Streak Saver 5x', quantity: 5, price: 3000 }
 ];
 
-const DEFAULT_ENERGY = 10000;
-
 const POWERUPS = [
   { id: 'spinpfp', name: 'Spinning Profile Picture', icon: <RefreshCw size={32} color="#1e90cb" />, price: 300, type: 'powerup', description: 'Make your profile picture spin for 7 days!' },
   { id: 'sparkle', name: 'Sparkle Effect', icon: <Sparkles size={32} color="#ffb347" />, price: 150, type: 'powerup', description: 'Add a sparkle effect to your avatar.' },
@@ -61,12 +59,23 @@ const ShopPage: React.FC<ShopPageProps> = ({ user, onPurchase, onRedeemStreakSav
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const tabsRef = useRef<HTMLDivElement | null>(null);
   const indicatorRef = useRef<HTMLDivElement | null>(null);
+
+  const hasLocalUserOverride = () => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return Boolean(sessionStorage.getItem('fitbuddyai_local_user_override') || localStorage.getItem('fitbuddyai_local_user_override'));
+    } catch (_error) {
+      return false;
+    }
+  };
   
 
   // Poll user from server every 1s if logged in
   useEffect(() => {
     if (!user?.id) return;
+    if (hasLocalUserOverride()) return;
     const fetchAndUpdate = async () => {
+      if (hasLocalUserOverride()) return;
       const fresh = await fetchUserById(user.id);
       if (fresh) {
         // Update localStorage and force rerender via onPurchase (hacky, but works for now)
@@ -130,37 +139,6 @@ const ShopPage: React.FC<ShopPageProps> = ({ user, onPurchase, onRedeemStreakSav
       return;
     }
     setPurchasing(item.id);
-
-    const isStreakSaver = String(item.id || '').startsWith('streak-saver');
-
-    // Handle streak saver client-side to avoid server rejection of custom ids
-    if (isStreakSaver) {
-      try {
-        const qty = Number((item as any).quantity ?? 1);
-        const nextInventory = Array.isArray(user.inventory) ? [...user.inventory] : [];
-        const idx = nextInventory.findIndex((it: any) => String(it?.id || '').startsWith('streak-saver'));
-        if (idx >= 0) {
-          const existing = nextInventory[idx];
-          const existingQty = Number(existing.quantity ?? existing.count ?? 1);
-          nextInventory[idx] = { ...existing, quantity: (Number.isFinite(existingQty) ? existingQty : 1) + qty };
-        } else {
-          nextInventory.push({ id: 'streak-saver', quantity: qty, type: 'powerup' });
-        }
-        const nextEnergy = Math.max(0, (user.energy ?? DEFAULT_ENERGY) - item.price);
-        const nextUser = { ...user, energy: nextEnergy, inventory: nextInventory };
-        saveUserData({ data: nextUser });
-        onPurchase(item);
-        window.dispatchEvent(new Event('storage'));
-      } catch (e) {
-        console.warn('Failed to process streak saver purchase:', e);
-        window.showFitBuddyNotification?.({ title: 'Purchase Failed', message: 'Purchase failed.', variant: 'error' });
-      } finally {
-        setPurchasing(null);
-      }
-      return;
-    }
-
-    // Default flow for server-backed items
     const updated = await buyShopItem(user.id, item);
     setPurchasing(null);
     if (updated) {
@@ -169,10 +147,10 @@ const ShopPage: React.FC<ShopPageProps> = ({ user, onPurchase, onRedeemStreakSav
         const nextEnergy = Math.max(0, (updated.energy ?? user.energy) - item.price);
         const nextUser = { ...user, ...updated, energy: nextEnergy, inventory: nextInventory };
         saveUserData({ data: nextUser });
+        onPurchase(item);
       } catch (e) {
         console.warn('Failed to save user after purchase:', e);
       }
-      onPurchase(item);
       window.dispatchEvent(new Event('storage'));
     } else {
       window.showFitBuddyNotification?.({ title: 'Purchase Failed', message: 'Purchase failed.', variant: 'error' });

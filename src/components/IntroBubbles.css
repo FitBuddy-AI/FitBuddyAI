@@ -122,6 +122,16 @@
   left: 50%;
   transform-origin: center center;
 }
+
+/* Per-bubble motion variables (replaces inline style vars in TSX). */
+.bubble-index-0 { --offscreen-x: 40px; --offscreen-y: -120px; --angle: 0deg; --distance: 210px; }
+.bubble-index-1 { --offscreen-x: 115px; --offscreen-y: 80px; --angle: 51deg; --distance: 210px; }
+.bubble-index-2 { --offscreen-x: 20px; --offscreen-y: 120px; --angle: 102deg; --distance: 210px; }
+.bubble-index-3 { --offscreen-x: -120px; --offscreen-y: 40px; --angle: 154deg; --distance: 210px; }
+.bubble-index-4 { --offscreen-x: -130px; --offscreen-y: -30px; --angle: 205deg; --distance: 210px; }
+.bubble-index-5 { --offscreen-x: -35px; --offscreen-y: -122px; --angle: 257deg; --distance: 210px; }
+.bubble-index-6 { --offscreen-x: 122px; --offscreen-y: -20px; --angle: 309deg; --distance: 210px; }
+
 @keyframes bubbleFlyIn {
   0% {
     opacity: 0;

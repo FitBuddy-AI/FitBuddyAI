@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "git fetch": true,
+        "220..420": true,
+        "260..520": true,
+        "git remote": true
+    }
+}

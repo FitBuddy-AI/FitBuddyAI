@@ -4,8 +4,8 @@ import { Target, Calendar, Zap, Dumbbell } from 'lucide-react';
 import './WelcomePage.css';
 import { loadUserData } from '../services/localStorage';
 // Footer is now rendered site-wide in `App.tsx`
-import IntroBubbles from './IntroBubbles';
 import BackgroundDots from './BackgroundDots';
+import HomeIntroStorm from './HomeIntroStorm';
 
 
 // Only generate random features once per page load
@@ -18,18 +18,22 @@ while (random.length < 3) {
   }
 }
 
-const WelcomePage: React.FC = () => {
+interface WelcomePageProps {
+  homeIntroEnabled: boolean;
+}
+
+const WelcomePage: React.FC<WelcomePageProps> = ({ homeIntroEnabled }) => {
   const location = useLocation();
   const navigate = useNavigate();
   // Parse query param
   const params = new URLSearchParams(location.search);
   const introParam = params.get('intro');
-  const shouldShowIntro = introParam === null || introParam === '1';
+  const shouldShowIntro = homeIntroEnabled && (introParam === null || introParam === '1');
   const [showIntro, setShowIntro] = useState(shouldShowIntro);
   const [mainVisible, setMainVisible] = useState(!shouldShowIntro);
   const [currentUser, setCurrentUser] = useState<any>(() => loadUserData());
   // When intro=0 we still render the main content but avoid entrance animations
-  const shouldAnimateLogo = introParam !== '0';
+  const shouldAnimateLogo = homeIntroEnabled && introParam !== '0';
   const hideIntroTimer = useRef<number | null>(null);
   const failSafeTimer = useRef<number | null>(null);
 
@@ -43,6 +47,19 @@ const WelcomePage: React.FC = () => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!homeIntroEnabled && showIntro) {
+      setMainVisible(true);
+      setShowIntro(false);
+      if (hideIntroTimer.current) {
+        clearTimeout(hideIntroTimer.current);
+      }
+      if (failSafeTimer.current) {
+        clearTimeout(failSafeTimer.current);
+      }
+    }
+  }, [homeIntroEnabled, showIntro]);
 
   // Keep user state in sync with storage (cross-tab or sign-in changes)
   useEffect(() => {
@@ -77,7 +94,7 @@ const WelcomePage: React.FC = () => {
   }, [showIntro]);
   return (
     <div className="welcome-page">
-      {showIntro && <IntroBubbles onFinish={handleIntroFinish} />}
+      {showIntro && <HomeIntroStorm onFinish={handleIntroFinish} />}
       <div className={`welcome-main ${mainVisible ? 'is-visible' : ''}`}>
         {/* Hero Section */}
         <div className="hero-section">

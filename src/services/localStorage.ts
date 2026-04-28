@@ -16,11 +16,11 @@ const STORAGE_KEYS = {
   USER_DATA_PERSISTED: 'fitbuddyai_user_data_persisted',
   ASSESSMENT_DATA: 'fitbuddyai_assessment_data',
   WORKOUT_PLAN: 'fitbuddyai_workout_plan',
+  HOME_INTRO_ENABLED: 'fitbuddyai_home_intro_enabled',
   SUPABASE_SESSION: 'fitbuddyai_supabase_session'
 };
 const AUTH_KEYS = {
   TOKEN: 'fitbuddyai_token',
-  TOKEN_PERSISTED: 'fitbuddyai_token_persisted'
 };
 // Auto-backup: import cloud backup helper and provide a debounced scheduler
 import { backupUserDataToServer } from './cloudBackupService';
@@ -241,7 +241,6 @@ export const clearUserData = (): void => {
     try { sessionStorage.removeItem(STORAGE_KEYS.USER_DATA); } catch {}
     try { localStorage.removeItem(STORAGE_KEYS.USER_DATA_PERSISTED); } catch {}
     try { sessionStorage.removeItem(AUTH_KEYS.TOKEN); } catch {}
-    try { localStorage.removeItem(AUTH_KEYS.TOKEN_PERSISTED); } catch {}
     // No user -> nothing to back up, but clear any pending timer
     if (backupTimeout) {
       clearTimeout(backupTimeout);
@@ -254,13 +253,30 @@ export const clearUserData = (): void => {
   }
 };
 
+export const loadHomeIntroEnabled = (): boolean => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEYS.HOME_INTRO_ENABLED);
+    if (saved === null) return false;
+    return saved !== '0';
+  } catch (_error) {
+    return false;
+  }
+};
+
+export const saveHomeIntroEnabled = (enabled: boolean): void => {
+  try {
+    localStorage.setItem(STORAGE_KEYS.HOME_INTRO_ENABLED, enabled ? '1' : '0');
+    window.dispatchEvent(new CustomEvent('fitbuddyai-home-intro-changed', { detail: { enabled } }));
+  } catch (_error) {
+    console.warn('Failed to save home intro preference');
+  }
+};
+
 // Auth token helpers (sessionStorage first, with a time-limited persisted fallback)
 export const saveAuthToken = (token: string | null) => {
   try {
     if (!token) return;
     sessionStorage.setItem(AUTH_KEYS.TOKEN, String(token));
-    // Persist token with timestamp for reload recovery (expire alongside user profile)
-    localStorage.setItem(AUTH_KEYS.TOKEN_PERSISTED, JSON.stringify({ token, timestamp: Date.now() }));
   } catch (e) {
     // ignore
   }
@@ -270,17 +286,6 @@ export const getAuthToken = (): string | null => {
   try {
     const t = sessionStorage.getItem(AUTH_KEYS.TOKEN);
     if (t) return t;
-    // Fallback to persisted token if still fresh (<= 7 days)
-    const persisted = localStorage.getItem(AUTH_KEYS.TOKEN_PERSISTED);
-    if (persisted) {
-      const parsed = safeParseStored<{ token: string; timestamp: number }>(persisted);
-      if (parsed?.token && parsed.timestamp && (Date.now() - parsed.timestamp) <= 7 * 24 * 60 * 60 * 1000) {
-        try { sessionStorage.setItem(AUTH_KEYS.TOKEN, parsed.token); } catch {}
-        return parsed.token;
-      }
-      // expired persisted token should be cleared
-      try { localStorage.removeItem(AUTH_KEYS.TOKEN_PERSISTED); } catch {}
-    }
     return null;
   } catch (e) {
     return null;
@@ -298,8 +303,6 @@ export const saveSupabaseSession = (session: any | null) => {
       return;
     }
     const payload: any = {
-      access_token: session.access_token,
-      refresh_token: session.refresh_token,
       expires_at: session.expires_at ?? (session.expires_in ? Math.round(Date.now() / 1000) + Number(session.expires_in || 0) : undefined)
     };
     localStorage.setItem(STORAGE_KEYS.SUPABASE_SESSION, JSON.stringify(payload));
@@ -308,7 +311,7 @@ export const saveSupabaseSession = (session: any | null) => {
   }
 };
 
-export const loadSupabaseSession = (): { access_token?: string; refresh_token?: string; expires_at?: number } | null => {
+export const loadSupabaseSession = (): { expires_at?: number } | null => {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.SUPABASE_SESSION);
     if (!raw) return null;

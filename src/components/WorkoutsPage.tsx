@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import './WorkoutsPage.css';
 import BackgroundDots from './BackgroundDots';
 // savedLibrary types unused here; using saved-names storage for saved list
-import { loadSavedNames, addSavedName, subscribeSavedNames, persistSavedNames, removeSavedName } from '../utils/savedNames';
+import { loadSavedNames, subscribeSavedNames, persistSavedNames } from '../utils/savedNames';
 import { loadAssessmentData } from '../services/localStorage';
 import { Workout, getAllWorkouts, getCategoryOptions, getCategoryBuckets } from '../services/workoutLibrary';
 import { pickWorkoutsFromAssessment } from '../services/assessmentWorkouts';
@@ -26,15 +26,14 @@ const WorkoutsPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
 
   const removeFromPlan = (item: Workout & { title: string }) => {
-    setMySavedNames(prev => {
-      if (!prev.includes(item.title)) {
-        showFitBuddyNotification({ message: 'That workout is not in your saved list.', variant: 'error' });
-        return prev;
-      }
-      const next = removeSavedName(item.title);
-      showFitBuddyNotification({ message: item.title + ' removed from your workouts.' });
-      return next;
-    });
+    if (!mySavedNames.includes(item.title)) {
+      showFitBuddyNotification({ message: 'That workout is not in your saved list.', variant: 'error' });
+      return;
+    }
+    const next = mySavedNames.filter(title => title !== item.title);
+    setMySavedNames(next);
+    persistSavedNames(next);
+    showFitBuddyNotification({ message: item.title + ' removed from your workouts.' });
   };
 
   const filtered = useMemo(() => {
@@ -61,16 +60,16 @@ const WorkoutsPage: React.FC = () => {
   }, []);
 
   const addToPlan = (item: Workout & { title: string }) => {
-    // Add only the workout name to the new saved-names list (no confetti)
-    setMySavedNames(prev => {
-      if (prev.includes(item.title)) {
-        showFitBuddyNotification({ message: 'Already saved to your workouts.' });
-        return prev;
-      }
-      const next = addSavedName(item.title);
-      showFitBuddyNotification({ message: item.title + ' saved to your workouts!' });
-      return next;
-    });
+    const alreadySaved = mySavedNames.includes(item.title);
+    if (alreadySaved) {
+      showFitBuddyNotification({ message: 'Already saved to your workouts.' });
+      return;
+    }
+
+    const next = [...mySavedNames, item.title];
+    setMySavedNames(next);
+    persistSavedNames(next);
+    showFitBuddyNotification({ message: item.title + ' saved to your workouts!' });
   };
 
   
@@ -92,17 +91,15 @@ const WorkoutsPage: React.FC = () => {
         const picks = pickWorkoutsFromAssessment(assessment);
         let added = 0;
         // Persist only names using the new saved-names approach
-        setMySavedNames(prev => {
-          const next = [...prev];
-          picks.forEach(p => {
-            if (!next.includes(p.title)) {
-              next.push(p.title);
-              added += 1;
-            }
-          });
-          try { persistSavedNames(next); } catch (_e) {}
-          return next;
+        const next = [...mySavedNames];
+        picks.forEach(p => {
+          if (!next.includes(p.title)) {
+            next.push(p.title);
+            added += 1;
+          }
         });
+        setMySavedNames(next);
+        try { persistSavedNames(next); } catch (_e) {}
         showFitBuddyNotification(
           added > 0
             ? { message: `Saved ${added} workouts from your assessment.` }

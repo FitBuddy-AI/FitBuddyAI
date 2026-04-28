@@ -142,6 +142,24 @@ const userUpdateLimiter = rateLimit({
   message: { error: 'Too many user updates, please try again later.' }
 });
 
+// Rate limiter for rickroll audit logging - protects the file-system write path from abuse
+const rickrollLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // limit each IP to 20 audit writes per windowMs
+  message: { error: 'Too many rickroll events, please try again later.' },
+  standardHeaders: 'draft-7',
+  legacyHeaders: false
+});
+
+// Rate limiter for local AI generation - protects the external AI call and audit logging
+const aiGenerateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30, // limit each IP to 30 AI requests per windowMs
+  message: { error: 'Too many AI requests, please try again later.' },
+  standardHeaders: 'draft-7',
+  legacyHeaders: false
+});
+
 // Rate limiter for user purchases - protects /api/user/buy endpoint for shop item purchases and energy transactions
 /**
  * Rate limiter for user purchases and shop transactions.
@@ -189,7 +207,8 @@ const userBuyLimiter = rateLimit({
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json());
+// Large AI-generated workout plans can exceed the default JSON body limit.
+app.use(bodyParser.json({ limit: '20mb' }));
 // Simple request logger to help debug routing issues in dev
 app.use((req, res, next) => {
   try {
@@ -406,23 +425,83 @@ app.get('/api/user/:id', async (req, res) => {
   }
 });
 
-app.post('/api/user/buy', userBuyLimiter, (req, res) => {
+app.post('/api/user/buy', userBuyLimiter, async (req, res) => {
   try {
-    const { id, item } = req.body;
+    const { id, item } = req.body || {};
     if (!id || !item) return res.status(400).json({ message: 'User ID and item required.' });
-    const users = readUsers();
-    const user = users.find(u => u.id === id);
+    if (!supabase) return res.status(500).json({ message: 'Supabase not configured.' });
+
+    const itemPrice = Number(item.price);
+    if (!Number.isFinite(itemPrice) || itemPrice < 0) {
+      return res.status(400).json({ message: 'Invalid item price.' });
+    }
+
+    const { data: user, error: fetchError } = await supabase
+      .from('fitbuddyai_userdata')
+      .select('*')
+      .eq('user_id', id)
+      .maybeSingle();
+
+    if (fetchError) {
+      console.error('[authServer] /api/user/buy fetch error', fetchError);
+      return res.status(500).json({ message: 'Failed to load user.' });
+    }
     if (!user) return res.status(404).json({ message: 'User not found.' });
-    if (typeof user.energy !== 'number' || user.energy < item.price) {
+
+    const currentEnergy = Number.isFinite(Number(user.energy)) ? Number(user.energy) : 0;
+    if (currentEnergy < itemPrice) {
       return res.status(400).json({ message: 'Not enough energy.' });
     }
-    user.energy -= item.price;
-    if (!Array.isArray(user.inventory)) user.inventory = [];
-    user.inventory.push(item);
-    writeUsers(users);
-    const { password: _password, ...userSafe } = user;
-    res.json({ user: userSafe });
+
+    const nextInventory = Array.isArray(user.inventory) ? [...user.inventory] : [];
+    const itemId = String(item.id || '');
+    const purchasedItem = {
+      ...item,
+      price: itemPrice,
+      purchased_at: new Date().toISOString()
+    };
+
+    if (itemId.startsWith('streak-saver')) {
+      const quantity = Number(item.quantity ?? item.count ?? 1);
+      const normalizedQuantity = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+      const existingIndex = nextInventory.findIndex((entry) => String(entry?.id || '').startsWith('streak-saver'));
+      if (existingIndex >= 0) {
+        const existing = nextInventory[existingIndex];
+        const existingQty = Number(existing?.quantity ?? existing?.count ?? 1);
+        nextInventory[existingIndex] = {
+          ...existing,
+          ...purchasedItem,
+          quantity: (Number.isFinite(existingQty) ? existingQty : 1) + normalizedQuantity
+        };
+      } else {
+        nextInventory.push({ ...purchasedItem, quantity: normalizedQuantity });
+      }
+    } else {
+      nextInventory.push(purchasedItem);
+    }
+
+    const updates = {
+      energy: currentEnergy - itemPrice,
+      inventory: nextInventory,
+      updated_at: new Date().toISOString()
+    };
+
+    const { data: updatedUser, error: updateError } = await supabase
+      .from('fitbuddyai_userdata')
+      .update(updates)
+      .eq('user_id', id)
+      .select('*')
+      .maybeSingle();
+
+    if (updateError) {
+      console.error('[authServer] /api/user/buy update error', updateError);
+      return res.status(500).json({ message: 'Failed to save purchase.' });
+    }
+
+    const { password: _password, ...userSafe } = updatedUser || { ...user, ...updates };
+    return res.json({ user: userSafe });
   } catch (err) {
+    console.error('[authServer] /api/user/buy unexpected', err);
     res.status(500).json({ message: 'Server error.' });
   }
 });
@@ -449,7 +528,17 @@ app.post('/api/user/update', userUpdateLimiter, async (req, res) => {
         console.error('[authServer] update error', error);
         return res.status(500).json({ message: 'Failed to update user.' });
       }
-      if (!data) return res.status(404).json({ message: 'User not found.' });
+      if (!data) {
+        const seedRow = { user_id: id, ...updates };
+        const { data: upserted, error: upsertError } = await supabase.from('fitbuddyai_userdata').upsert(seedRow, { onConflict: 'user_id', returning: 'representation' }).select().limit(1).maybeSingle();
+        if (upsertError) {
+          console.error('[authServer] update fallback upsert error', upsertError);
+          return res.status(500).json({ message: 'Failed to update user.' });
+        }
+        if (!upserted) return res.status(404).json({ message: 'User not found.' });
+        const { password: _password, ...safeUpserted } = upserted || {};
+        return res.json({ user: safeUpserted });
+      }
 
       const { password: _password, ...safe } = data || {};
 
@@ -631,7 +720,7 @@ app.post('/api/dev/apply-action', (req, res) => {
 });
 
 // Track rickroll events: client posts when a user is redirected to the rickroll.
-app.post('/api/rickroll', async (req, res) => {
+app.post('/api/rickroll', rickrollLimiter, async (req, res) => {
   try {
     const auth = String(req.headers.authorization || '');
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
@@ -681,7 +770,7 @@ app.post('/api/rickroll', async (req, res) => {
 });
 
 // Local AI generation endpoint for dev server
-app.post('/api/ai/generate', async (req, res) => {
+app.post('/api/ai/generate', aiGenerateLimiter, async (req, res) => {
   try {
     // Be forgiving about incoming body shapes (prompt, contents, inputs, messages)
     let body = req.body || {};
@@ -741,7 +830,7 @@ app.post('/api/ai/generate', async (req, res) => {
     // Accept multiple env var names so deployments that used VITE_/NEXT_PUBLIC_ still work
     const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
     const GEMINI_URL = GEMINI_API_KEY
-      ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`
+      ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`
       : null;
 
     let generatedText = '';
@@ -749,66 +838,37 @@ app.post('/api/ai/generate', async (req, res) => {
       const allowMock = process.env.LOCAL_AI_MOCK === '1' || process.env.NODE_ENV !== 'production';
       if (!allowMock) return res.status(500).json({ message: 'AI provider not configured', diagnostic: { env_GEMINI_API_KEY_present: false } });
       console.warn('[authServer] GEMINI_API_KEY missing — returning local mock response (development)');
-      const today = new Date().toISOString().split('T')[0];
-      const _mockPlan = {
-        id: `mock-${Date.now()}`,
-        name: 'Local Mock Plan',
-        startDate: today,
-        endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        totalDays: 7,
-        totalTime: '30 minutes',
-        weeklyStructure: ['Monday','Wednesday','Friday'],
-        dailyWorkouts: [
-          {
-            date: today,
-            type: 'strength',
-            completed: false,
-            totalTime: '30 minutes',
-            workouts: [
-              { name: 'Bodyweight Squats', difficulty: 'beginner', duration: '10 minutes', reps: 12, muscleGroups: ['legs'], equipment: [], description: 'Simple squats.' }
-            ],
-            alternativeWorkouts: []
-          }
-        ]
-      };
-      // For local dev, return a human-facing message indicating the
-      // feature is under development rather than a fabricated JSON plan.
-      generatedText = 'Sorry, this feature is currently under development.';
+      const lowerPrompt = String(prompt || '').toLowerCase();
+      if (lowerPrompt.includes('workout') || lowerPrompt.includes('plan') || lowerPrompt.includes('exercise')) {
+        generatedText = 'I can help you refine your workout plan in local demo mode. Connect GEMINI_API_KEY for full AI responses, or try asking for a warmup, a beginner-friendly routine, or a recovery suggestion.';
+      } else {
+        generatedText = 'I am running in local demo mode right now. Connect GEMINI_API_KEY for full AI responses, or ask me for workout ideas, recovery tips, or goal-based coaching.';
+      }
     } else {
       const response = await fetch(GEMINI_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
       });
-      const data = await response.json();
-      generatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    }
-
-    // If the AI returned an empty string unexpectedly, return a small
-    // deterministic fallback so clients (chat/planner) have valid JSON
-    // to parse and we fail more loudly in dev rather than returning silently
-    // empty text which is confusing in the UI.
-    try {
-      if (!generatedText || String(generatedText).trim().length === 0) {
-        console.warn('[authServer] generatedText empty — returning deterministic fallback plan');
-        const today2 = new Date().toISOString().split('T')[0];
-        const _fallbackPlan = {
-          id: `fallback-${Date.now()}`,
-          name: 'Fallback Plan (empty AI response)',
-          description: 'Returned because the AI returned an empty result. Configure GEMINI_API_KEY or inspect server logs.',
-          startDate: today2,
-          endDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          totalDays: 1,
-          totalTime: '0 minutes',
-          weeklyStructure: [],
-          dailyWorkouts: [
-            { date: today2, type: 'rest', completed: false, totalTime: '0 minutes', workouts: [], alternativeWorkouts: [] }
-          ]
-        };
-                generatedText = 'Sorry, this feature is currently under development.';
+      const responseText = await response.text();
+      let data = null;
+      try {
+        data = responseText ? JSON.parse(responseText) : null;
+      } catch (_e) {
+        data = null;
       }
-    } catch (e) {
-      console.warn('[authServer] fallback generation failed', e);
+      if (!response.ok) {
+        const message = data?.error?.message || data?.message || `Gemini request failed with status ${response.status}`;
+        console.warn('[authServer] Gemini request failed', { status: response.status, message, body: responseText.slice(0, 500) });
+        generatedText = `AI Coach could not reach Gemini: ${message}`;
+      } else {
+        generatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (!generatedText || String(generatedText).trim().length === 0) {
+          const message = data?.promptFeedback?.blockReason ? `Blocked by Gemini safety filters (${data.promptFeedback.blockReason})` : 'Gemini returned an empty response';
+          console.warn('[authServer] Gemini response empty', { body: responseText.slice(0, 500) });
+          generatedText = `AI Coach could not produce a reply right now: ${message}`;
+        }
+      }
     }
 
     // Audit-log if supabase is configured

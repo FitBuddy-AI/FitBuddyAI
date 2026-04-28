@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Flame, Sparkles } from 'lucide-react';
+import { Flame, Sparkles, Home, Dumbbell, BookOpen, ClipboardList, Calendar, Trophy, MessageCircle, Newspaper, ShoppingBag, Settings, LogIn, User, Menu, type LucideIcon } from 'lucide-react';
 import { loadQuestionnaireProgress, clearUserData, clearQuestionnaireProgress, loadAssessmentData, loadWorkoutPlan } from '../services/localStorage';
 import './Header.css';
 import { backupAndDeleteSensitive } from '../services/cloudBackupService';
@@ -40,6 +40,16 @@ const getUpcomingWorkoutCount = (plan: any | null): number => {
   }, 0);
 };
 
+type DrawerNavItem = {
+  key: string;
+  label: string;
+  Icon: LucideIcon;
+  onClick: () => void;
+  badge?: string | number;
+  className?: string;
+  ariaLabel?: string;
+};
+
 const Header: React.FC<HeaderProps> = ({ profileVersion, userData }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -56,9 +66,19 @@ const Header: React.FC<HeaderProps> = ({ profileVersion, userData }) => {
   const toggleExploreDrawer = React.useCallback(() => {
     setDrawerState((prev) => (prev === 'open' ? 'closing' : 'open'));
   }, []);
+  const openExploreDrawer = React.useCallback(() => {
+    setDrawerState('open');
+  }, []);
   const closeExploreDrawer = React.useCallback(() => {
     setDrawerState((prev) => (prev === 'open' ? 'closing' : prev));
   }, []);
+  const handleMobileMenuButton = React.useCallback(() => {
+    if (isDrawerVisible) {
+      setDrawerState('closed');
+      return;
+    }
+    openExploreDrawer();
+  }, [isDrawerVisible, openExploreDrawer]);
   const handleDrawerTransitionEnd = React.useCallback((event: React.TransitionEvent<HTMLDivElement>) => {
     if (event.propertyName !== 'transform') return;
     setDrawerState((prev) => (prev === 'closing' ? 'closed' : prev));
@@ -369,6 +389,62 @@ const Header: React.FC<HeaderProps> = ({ profileVersion, userData }) => {
 
   const isActive = (path: string) => location.pathname === path;
 
+  const drawerPrimaryItems: DrawerNavItem[] = [
+    { key: 'home', label: 'Home', Icon: Home, onClick: () => { closeExploreDrawer(); navigate('/?intro=0'); } },
+    { key: 'workouts', label: 'Workout Library', Icon: Dumbbell, onClick: () => { closeExploreDrawer(); navigate('/workouts'); } },
+    {
+      key: 'saved-workouts',
+      label: 'Saved Workouts',
+      Icon: BookOpen,
+      badge: savedWorkoutCount,
+      className: 'saved-workouts-link',
+      ariaLabel: `Saved Workouts (${savedWorkoutCount} saved)`,
+      onClick: () => { closeExploreDrawer(); navigate('/library'); }
+    },
+    { key: 'assessment', label: 'Assessment', Icon: ClipboardList, onClick: () => { closeExploreDrawer(); navigate('/questionnaire'); } },
+    {
+      key: 'calendar',
+      label: 'Calendar',
+      Icon: Calendar,
+      badge: upcomingWorkoutCount,
+      className: 'calendar-link',
+      ariaLabel: `Calendar (${upcomingWorkoutCount} upcoming workouts)`,
+      onClick: () => { closeExploreDrawer(); navigate('/calendar'); }
+    },
+    ...(isSignedIn ? [{ key: 'achievements', label: 'Achievements', Icon: Trophy, onClick: () => { closeExploreDrawer(); navigate('/profile/achievements'); } }] : []),
+    {
+      key: 'chat',
+      label: 'Chat',
+      Icon: MessageCircle,
+      onClick: () => {
+        try { window.dispatchEvent(new CustomEvent('fitbuddyai-open-chat')); } catch {}
+        closeExploreDrawer();
+        navigate('/chat');
+      }
+    },
+    { key: 'blog', label: 'Blog', Icon: Newspaper, onClick: () => { closeExploreDrawer(); navigate('/blog'); } },
+    { key: 'shop', label: 'Shop', Icon: ShoppingBag, className: 'dropdown-shop', onClick: () => { closeExploreDrawer(); navigate('/shop'); } }
+  ];
+
+  const drawerAccountItems: DrawerNavItem[] = isSignedIn
+    ? [{ key: 'settings', label: 'Settings', Icon: Settings, onClick: () => { closeExploreDrawer(); navigate('/profile/settings'); } }]
+    : [];
+
+  const mobileNavItems = [
+    { key: 'home', label: 'Home', Icon: Home, onClick: () => navigate('/?intro=0'), active: location.pathname === '/' },
+    { key: 'workouts', label: 'Workouts', Icon: Dumbbell, onClick: () => navigate('/workouts'), active: location.pathname === '/workouts' },
+    {
+      key: 'calendar',
+      label: 'Calendar',
+      Icon: Calendar,
+      badge: upcomingWorkoutCount > 0 ? upcomingWorkoutCount : undefined,
+      onClick: () => navigate('/calendar'),
+      active: location.pathname === '/calendar'
+    },
+    { key: 'chat', label: 'Chat', Icon: MessageCircle, onClick: () => navigate('/chat'), active: location.pathname === '/chat' },
+    { key: 'more', label: 'Menu', Icon: Menu, onClick: handleMobileMenuButton, active: drawerState === 'open' }
+  ];
+
   return (
     <header className="app-header">
       <div className="header-container">
@@ -394,6 +470,11 @@ const Header: React.FC<HeaderProps> = ({ profileVersion, userData }) => {
               onTransitionEnd={handleDrawerTransitionEnd}
             >
               <div className="explore-drawer-content">
+                <div className="explore-drawer-header">
+                  <div className="explore-drawer-eyebrow">Explore</div>
+                  <div className="explore-drawer-title">Quick access</div>
+                  <p className="explore-drawer-subtitle">Move through the app without leaving the header.</p>
+                </div>
                 <div className="explore-profile">
                   <img
                     src={tryOnAvatar || (currentUser && currentUser.avatar && currentUser.avatar.trim() ? currentUser.avatar : "/images/fitbuddy_head.png")}
@@ -404,6 +485,9 @@ const Header: React.FC<HeaderProps> = ({ profileVersion, userData }) => {
                   <div className="explore-profile-text">
                     <div className="explore-profile-name">
                       {isSignedIn ? (((currentUser?.username && currentUser.username.trim()) || 'User')) : 'Sign in to personalize'}
+                    </div>
+                    <div className="explore-profile-subtitle">
+                      {isSignedIn ? 'Your profile and counters' : 'Sign in to sync your progress'}
                     </div>
                     {isSignedIn && (
                       <div className="explore-profile-counters">
@@ -418,60 +502,55 @@ const Header: React.FC<HeaderProps> = ({ profileVersion, userData }) => {
                       </div>
                     )}
                     <div className="explore-profile-actions">
-                      <button onClick={() => { closeExploreDrawer(); navigate(isSignedIn ? '/profile' : '/signin'); }}>
-                        {isSignedIn ? 'View Profile' : 'Sign In'}
+                      <button className="explore-profile-action-primary" onClick={() => { closeExploreDrawer(); navigate(isSignedIn ? '/profile' : '/signin'); }}>
+                        {isSignedIn ? <><User size={16} /> View Profile</> : <><LogIn size={16} /> Sign In</>}
                       </button>
                     </div>
                   </div>
                 </div>
-                <div className="explore-drawer-links">
-                  <button onClick={() => { closeExploreDrawer(); navigate('/?intro=0'); }}>Home</button>
-                  <button onClick={() => { closeExploreDrawer(); navigate('/workouts'); }}>Workout Library</button>
-                  <button
-                    className="saved-workouts-link"
-                    aria-label={`Saved Workouts (${savedWorkoutCount} saved)`}
-                    onClick={() => { closeExploreDrawer(); navigate('/library'); }}
-                  >
-                    <span>Saved Workouts</span>
-                    <span className="saved-workouts-badge badge-circle" aria-hidden="true">
-                      {savedWorkoutCount}
-                    </span>
-                  </button>
-                  <button onClick={() => { closeExploreDrawer(); navigate('/questionnaire'); }}>Assessment</button>
-                  <button
-                    className="calendar-link"
-                    aria-label={`Calendar (${upcomingWorkoutCount} upcoming workouts)`}
-                    onClick={() => { closeExploreDrawer(); navigate('/calendar'); }}
-                  >
-                    <span>Calendar</span>
-                    <span className="badge-circle" aria-hidden="true">
-                      {upcomingWorkoutCount}
-                    </span>
-                  </button>
-                  {isSignedIn && (
-                    <button onClick={() => { closeExploreDrawer(); navigate('/profile/achievements'); }}>Achievements</button>
-                  )}
-                  <button
-                    onClick={() => {
-                      try { window.dispatchEvent(new CustomEvent('fitbuddyai-open-chat')); } catch {}
-                      closeExploreDrawer();
-                      navigate('/chat');
-                    }}
-                  >
-                    Chat
-                  </button>
-                  <button onClick={() => { closeExploreDrawer(); navigate('/blog'); }}>Blog</button>
-                  {/* Pricing temporarily removed from the drawer; keep code for quick reinstatement. */}
-                  {false && (
-                    <button onClick={() => { closeExploreDrawer(); navigate('/pricing'); }}>Pricing</button>
-                  )}
-                  <button onClick={() => { closeExploreDrawer(); navigate('/shop'); }} >Shop</button>
-                  {isSignedIn && (
-                    <div className="explore-footer">
-                      <button onClick={() => { closeExploreDrawer(); navigate('/profile/settings'); }}>Settings</button>
-                    </div>
-                  )}
+                <div className="explore-section">
+                  <div className="explore-section-label">Navigate</div>
+                  <div className="explore-drawer-links">
+                    {drawerPrimaryItems.map(({ key, label, Icon, onClick, badge, className, ariaLabel }) => (
+                      <button
+                        key={key}
+                        className={className ? `explore-nav-item ${className}` : 'explore-nav-item'}
+                        aria-label={ariaLabel || label}
+                        onClick={onClick}
+                      >
+                        <span className="explore-nav-main">
+                          <span className="explore-nav-icon"><Icon size={16} /></span>
+                          <span className="explore-nav-label">{label}</span>
+                        </span>
+                        {badge !== undefined && (
+                          <span className="badge-circle explore-nav-badge" aria-hidden="true">
+                            {badge}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+                {isSignedIn && drawerAccountItems.length > 0 && (
+                  <div className="explore-section explore-account-section">
+                    <div className="explore-section-label">Account</div>
+                    <div className="explore-drawer-links">
+                      {drawerAccountItems.map(({ key, label, Icon, onClick, ariaLabel }) => (
+                        <button
+                          key={key}
+                          className="explore-nav-item"
+                          aria-label={ariaLabel || label}
+                          onClick={onClick}
+                        >
+                          <span className="explore-nav-main">
+                            <span className="explore-nav-icon"><Icon size={16} /></span>
+                            <span className="explore-nav-label">{label}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -568,6 +647,29 @@ const Header: React.FC<HeaderProps> = ({ profileVersion, userData }) => {
             </div>
         </nav>
       </div>
+
+      <nav className="mobile-nav-dock" aria-label="Mobile navigation">
+        {mobileNavItems.map(({ key, label, Icon, onClick, badge, active }) => (
+          <button
+            key={key}
+            type="button"
+            className={`mobile-nav-button${active ? ' active' : ''}`}
+            aria-label={label}
+            aria-pressed={active}
+            onClick={onClick}
+          >
+            <span className="mobile-nav-icon" aria-hidden="true">
+              <Icon size={18} />
+              {badge !== undefined && (
+                <span className="badge-circle mobile-nav-badge" aria-hidden="true">
+                  {badge}
+                </span>
+              )}
+            </span>
+            <span className="mobile-nav-label">{label}</span>
+          </button>
+        ))}
+      </nav>
     </header>
   );
 };

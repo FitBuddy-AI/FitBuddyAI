@@ -99,6 +99,17 @@
 }
 .msg-text{white-space:pre-wrap;font-size:15px;line-height:1.5}
 
+.msg-link{
+  color:#1e90cb;
+  font-weight:700;
+  text-decoration:underline;
+  text-underline-offset:2px;
+}
+
+.msg-link:hover{
+  filter:brightness(0.92);
+}
+
 .msg-user{
   align-self:flex-end;
   background:linear-gradient(90deg,var(--color-primary),#16b967);
@@ -239,13 +250,29 @@ body.theme-dark .gemini-header{
 }
 body.theme-dark .gemini-sub{ color: var(--text-medium); }
 body.theme-dark .gemini-chat{
-  scrollbar-color: rgba(255,255,255,0.18) transparent;
   background:
     radial-gradient(circle, rgba(255,255,255,0.28) 1px, rgba(255,255,255,0) 1px),
     linear-gradient(180deg,#111a27,#0f1624) !important;
   background-size: 26px 26px, 100% 100%;
   background-position: 0 0, 0 0;
   background-repeat: repeat, repeat;
+}
+body.theme-dark .gemini-chat::-webkit-scrollbar {
+  width: 10px;
+}
+body.theme-dark .gemini-chat::-webkit-scrollbar-track {
+  background: transparent;
+}
+body.theme-dark .gemini-chat::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.18);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+body.theme-dark .gemini-chat::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.28);
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 body.theme-dark .msg{
   box-shadow: 0 10px 30px rgba(0,0,0,0.45);
@@ -267,6 +294,9 @@ body.theme-dark .msg-user .logo{
 body.theme-dark .msg-user .logo .initials{ color: #9fd6ff; }
 body.theme-dark .msg-assistant .logo{
   background: linear-gradient(135deg, #0fb77a, #1b9fe0);
+}
+body.theme-dark .msg-link{
+  color:#8fd0ff;
 }
 body.theme-dark .gemini-input{
   background: linear-gradient(90deg, rgba(8,14,24,0.92), rgba(12,18,30,0.92));

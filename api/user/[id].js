@@ -34,6 +34,82 @@ export default async function handler(req, res) {
       if (action === 'assessment') {
         return res.status(404).json({ message: 'No assessment found.' });
       }
+      if (action === 'buy') {
+        const body = req.body || {};
+        const item = body.item || null;
+        if (!item || typeof item !== 'object') {
+          return res.status(400).json({ message: 'Item required.' });
+        }
+
+        const price = Number(item.price || 0);
+        if (isNaN(price) || price < 0) {
+          return res.status(400).json({ message: 'Invalid item price.' });
+        }
+
+        const authHeader = String(req.headers.authorization || req.headers.Authorization || '');
+        const token = authHeader && authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7) : null;
+        if (!token) {
+          return res.status(401).json({ message: 'Missing Authorization token.' });
+        }
+
+        try {
+          const { data: authData, error: authErr } = await supabase.auth.getUser(token);
+          if (authErr || !authData || !authData.user) {
+            return res.status(401).json({ message: 'Invalid or expired token.' });
+          }
+          if (authData.user.id !== id) {
+            return res.status(403).json({ message: 'Token does not match user.' });
+          }
+        } catch (err) {
+          return res.status(401).json({ message: 'Invalid or expired token.' });
+        }
+
+        const { data: userData, error: fetchErr } = await supabase
+          .from('fitbuddyai_userdata')
+          .select('*')
+          .eq('user_id', id)
+          .limit(1)
+          .maybeSingle();
+        if (fetchErr) {
+          console.error('Supabase error fetching user for purchase:', fetchErr);
+          return res.status(500).json({ message: 'Supabase error.' });
+        }
+        if (!userData) {
+          return res.status(404).json({ message: 'User not found.' });
+        }
+
+        const currentEnergy = Number(userData.energy || 0);
+        if (currentEnergy < price) {
+          return res.status(409).json({ message: 'Insufficient energy to purchase item.' });
+        }
+
+        const existingInventory = Array.isArray(userData.inventory) ? userData.inventory : [];
+        const purchasedItem = {
+          ...item,
+          price,
+          quantity: Number.isFinite(Number(item.quantity)) ? Number(item.quantity) : item.quantity,
+          purchased_at: new Date().toISOString()
+        };
+        const newInventory = [...existingInventory, purchasedItem];
+        const newEnergy = currentEnergy - price;
+
+        const { data: updated, error: updateErr } = await supabase
+          .from('fitbuddyai_userdata')
+          .update({ inventory: newInventory, energy: newEnergy })
+          .eq('user_id', id)
+          .select()
+          .maybeSingle();
+        if (updateErr) {
+          console.error('Supabase error updating purchase:', updateErr);
+          return res.status(500).json({ message: 'Supabase error.' });
+        }
+        if (!updated) {
+          return res.status(500).json({ message: 'Failed to update user.' });
+        }
+
+        const { password: _password, ...userSafe } = updated;
+        return res.status(200).json({ user: userSafe });
+      }
       // Fallback: unsupported POST
       return res.status(400).json({ message: 'Bad request' });
     }

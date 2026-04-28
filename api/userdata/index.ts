@@ -119,18 +119,34 @@ export default async function handler(req: any, res: any) {
           ? (userPayload.data || userPayload)
           : null;
         const usernameFromPayload = (payloadToWrite && payloadToWrite.username) || (maybeUser && (maybeUser.username || maybeUser.name)) || null;
-        const avatarFromPayload = (payloadToWrite && payloadToWrite.avatar) || (maybeUser && (maybeUser.avatar || maybeUser.avatar_url || maybeUser.photoUrl)) || null;
+        const avatarFromPayload = (payloadToWrite && (payloadToWrite.avatar_url || payloadToWrite.avatar)) || (maybeUser && (maybeUser.avatar_url || maybeUser.avatar || maybeUser.photoUrl)) || null;
+        const energyFromPayload = (payloadToWrite && Object.prototype.hasOwnProperty.call(payloadToWrite, 'energy')) ? payloadToWrite.energy : (maybeUser && Object.prototype.hasOwnProperty.call(maybeUser, 'energy') ? maybeUser.energy : null);
+        const inventoryFromPayload = (payloadToWrite && Object.prototype.hasOwnProperty.call(payloadToWrite, 'inventory')) ? payloadToWrite.inventory : (maybeUser && Object.prototype.hasOwnProperty.call(maybeUser, 'inventory') ? maybeUser.inventory : null);
+        const streakFromPayload = (payloadToWrite && Object.prototype.hasOwnProperty.call(payloadToWrite, 'streak')) ? payloadToWrite.streak : (maybeUser && Object.prototype.hasOwnProperty.call(maybeUser, 'streak') ? maybeUser.streak : null);
         if (usernameFromPayload) {
           upsertRow.username = usernameFromPayload;
           delete payloadToWrite.username;
         }
         if (avatarFromPayload) {
-          upsertRow.avatar = avatarFromPayload;
+          upsertRow.avatar_url = avatarFromPayload;
+          delete payloadToWrite.avatar_url;
           delete payloadToWrite.avatar;
+        }
+        if (Object.prototype.hasOwnProperty.call(payloadToWrite, 'energy') || (maybeUser && Object.prototype.hasOwnProperty.call(maybeUser, 'energy'))) {
+          upsertRow.energy = energyFromPayload;
+          delete payloadToWrite.energy;
+        }
+        if (Array.isArray(inventoryFromPayload)) {
+          upsertRow.inventory = inventoryFromPayload;
+          delete payloadToWrite.inventory;
+        }
+        if (Object.prototype.hasOwnProperty.call(payloadToWrite, 'streak') || (maybeUser && Object.prototype.hasOwnProperty.call(maybeUser, 'streak'))) {
+          upsertRow.streak = streakFromPayload;
+          delete payloadToWrite.streak;
         }
         // Do not attempt to write an 'assessment_data' column (not present in current schema)
         // Warn if there are other arbitrary payload keys (we are intentionally not storing them)
-        const allowedKeys = new Set(['questionnaire_progress','workout_plan','accepted_terms','accepted_privacy','chat_history','username','avatar','fitbuddyai_user_data','user','user_data']);
+        const allowedKeys = new Set(['questionnaire_progress','workout_plan','accepted_terms','accepted_privacy','chat_history','username','avatar','avatar_url','energy','inventory','streak','fitbuddyai_user_data','user','user_data']);
         const extraKeys = Object.keys(payloadToWrite || {}).filter(k => !allowedKeys.has(k));
         if (extraKeys.length) console.warn('[api/userdata] ignoring extra payload keys (not stored to DB):', extraKeys);
         console.log('[api/userdata] upsertRow keys:', Object.keys(upsertRow));

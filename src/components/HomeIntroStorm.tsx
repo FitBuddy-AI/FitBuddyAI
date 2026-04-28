@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Brain, ChevronRight, Dumbbell, Flame, ShieldCheck, Sparkles, Target, TrendingUp, Zap } from 'lucide-react';
+import { Brain, ChevronRight, Dumbbell, ShieldCheck, Sparkles, Target, TrendingUp } from 'lucide-react';
 import './HomeIntroStorm.css';
 
 const particleVariants = Array.from({ length: 24 }, (_, index) => index);

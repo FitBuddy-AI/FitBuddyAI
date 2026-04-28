@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Brain, CalendarDays, ChevronRight, Dumbbell, Flame, Layers3, ShieldCheck, Sparkles, Target, TrendingUp } from 'lucide-react';
+import { ArrowRight, Brain, CalendarDays, ChevronRight, Dumbbell, Layers3, ShieldCheck, Sparkles, Target } from 'lucide-react';
 import './NewIntroPage.css';
 import { loadUserData } from '../services/localStorage';
 

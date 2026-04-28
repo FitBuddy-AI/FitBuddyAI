@@ -17,6 +17,8 @@ const MAX_HISTORY_MESSAGES = 12; // limit context length to speed up LLM respons
 
 const isInternalChatLink = (href: string) => href.startsWith('/') && !href.startsWith('//');
 
+const isSafeChatHref = (href: string) => isInternalChatLink(href) || /^https?:\/\//i.test(href);
+
 const trimTrailingPunctuation = (value: string) => {
   let end = value.length;
   while (end > 0 && '.,!?;:)]}'.includes(value[end - 1])) {
@@ -37,6 +39,7 @@ const renderChatText = (text: string) => {
       output.push(source.slice(lastIndex, match.index));
     }
 
+    const markdownToken = match[1];
     const markdownLabel = match[2];
     const markdownHref = match[3];
     const rawHref = match[4];
@@ -45,17 +48,21 @@ const renderChatText = (text: string) => {
     const key = `chat-link-${output.length}`;
 
     if (markdownLabel && markdownHref) {
-      output.push(
-        isInternalChatLink(href) ? (
-          <Link key={key} to={href} className="msg-link">
-            {markdownLabel}
-          </Link>
-        ) : (
-          <a key={key} href={href} target="_blank" rel="noreferrer" className="msg-link">
-            {markdownLabel}
-          </a>
-        )
-      );
+      if (!isSafeChatHref(href)) {
+        output.push(markdownToken);
+      } else {
+        output.push(
+          isInternalChatLink(href) ? (
+            <Link key={key} to={href} className="msg-link">
+              {markdownLabel}
+            </Link>
+          ) : (
+            <a key={key} href={href} target="_blank" rel="noopener noreferrer" className="msg-link">
+              {markdownLabel}
+            </a>
+          )
+        );
+      }
     } else if (href) {
       output.push(
         isInternalChatLink(href) ? (
@@ -63,7 +70,7 @@ const renderChatText = (text: string) => {
             {href}
           </Link>
         ) : (
-          <a key={key} href={href} target="_blank" rel="noreferrer" className="msg-link">
+          <a key={key} href={href} target="_blank" rel="noopener noreferrer" className="msg-link">
             {href}
           </a>
         )

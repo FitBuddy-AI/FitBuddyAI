@@ -26,14 +26,16 @@ const WorkoutsPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
 
   const removeFromPlan = (item: Workout & { title: string }) => {
-    if (!mySavedNames.includes(item.title)) {
-      showFitBuddyNotification({ message: 'That workout is not in your saved list.', variant: 'error' });
-      return;
-    }
-    const next = mySavedNames.filter(title => title !== item.title);
-    setMySavedNames(next);
-    persistSavedNames(next);
-    showFitBuddyNotification({ message: item.title + ' removed from your workouts.' });
+    setMySavedNames((prev) => {
+      if (!prev.includes(item.title)) {
+        showFitBuddyNotification({ message: 'That workout is not in your saved list.', variant: 'error' });
+        return prev;
+      }
+      const next = prev.filter(title => title !== item.title);
+      persistSavedNames(next);
+      showFitBuddyNotification({ message: item.title + ' removed from your workouts.' });
+      return next;
+    });
   };
 
   const filtered = useMemo(() => {
@@ -60,16 +62,17 @@ const WorkoutsPage: React.FC = () => {
   }, []);
 
   const addToPlan = (item: Workout & { title: string }) => {
-    const alreadySaved = mySavedNames.includes(item.title);
-    if (alreadySaved) {
-      showFitBuddyNotification({ message: 'Already saved to your workouts.' });
-      return;
-    }
+    setMySavedNames((prev) => {
+      if (prev.includes(item.title)) {
+        showFitBuddyNotification({ message: 'Already saved to your workouts.' });
+        return prev;
+      }
 
-    const next = [...mySavedNames, item.title];
-    setMySavedNames(next);
-    persistSavedNames(next);
-    showFitBuddyNotification({ message: item.title + ' saved to your workouts!' });
+      const next = [...prev, item.title];
+      persistSavedNames(next);
+      showFitBuddyNotification({ message: item.title + ' saved to your workouts!' });
+      return next;
+    });
   };
 
   
@@ -91,20 +94,22 @@ const WorkoutsPage: React.FC = () => {
         const picks = pickWorkoutsFromAssessment(assessment);
         let added = 0;
         // Persist only names using the new saved-names approach
-        const next = [...mySavedNames];
-        picks.forEach(p => {
-          if (!next.includes(p.title)) {
-            next.push(p.title);
-            added += 1;
-          }
+        setMySavedNames((prev) => {
+          const next = [...prev];
+          picks.forEach(p => {
+            if (!next.includes(p.title)) {
+              next.push(p.title);
+              added += 1;
+            }
+          });
+          try { persistSavedNames(next); } catch (_e) {}
+          showFitBuddyNotification(
+            added > 0
+              ? { message: `Saved ${added} workouts from your assessment.` }
+              : { message: 'Those workouts are already saved.', variant: 'warning' }
+          );
+          return next;
         });
-        setMySavedNames(next);
-        try { persistSavedNames(next); } catch (_e) {}
-        showFitBuddyNotification(
-          added > 0
-            ? { message: `Saved ${added} workouts from your assessment.` }
-            : { message: 'Those workouts are already saved.', variant: 'warning' }
-        );
         setAiSaving(false);
       }, 120);
     } catch (err) {

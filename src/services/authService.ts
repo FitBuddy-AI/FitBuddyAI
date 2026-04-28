@@ -35,7 +35,7 @@ export async function buyShopItem(id: string, item: any): Promise<User | null> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, item: safeItem })
     });
-    const res = await fetch('/api/user/buy', reqInit);
+    const res = await fetch(`/api/user/${encodeURIComponent(id)}?action=buy`, reqInit);
     if (!res.ok) {
       // Attempt to read structured error code from server
       try {

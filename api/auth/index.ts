@@ -130,6 +130,24 @@ function makeSessionId() {
   return uuidv4();
 }
 
+function getBearerToken(req: any): string | null {
+  const authHeader = String(req.headers['authorization'] || req.headers['Authorization'] || '');
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : null;
+}
+
+async function requireMatchingUser(req: any, expectedUserId: string): Promise<boolean> {
+  const token = getBearerToken(req);
+  if (!token) return false;
+  try {
+    const { data: authData, error } = await supabase.auth.getUser(token);
+    if (error || !authData?.user?.id) return false;
+    return authData.user.id === expectedUserId;
+  } catch {
+    return false;
+  }
+}
+
 interface AdminJwtPayload {
   role: string;
   [key: string]: unknown;
@@ -205,10 +223,9 @@ export default async function handler(req: any, res: any) {
       const { userId, refresh_token } = req.body as { userId?: string; refresh_token?: string };
       if (!userId || !refresh_token) return res.status(400).json({ message: 'userId and refresh_token required.' });
 
-      try {
-        await supabase.from('fitbuddyai_refresh_tokens').update({ revoked: true }).eq('user_id', userId).neq('revoked', true);
-      } catch (e) {
-        console.warn('[api/auth/store_refresh] error revoking existing sessions', e);
+      const callerMatches = await requireMatchingUser(req, userId);
+      if (!callerMatches) {
+        return res.status(401).json({ message: 'Invalid or expired token.' });
       }
 
       const enc = encryptToken(String(refresh_token));

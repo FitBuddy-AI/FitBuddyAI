@@ -402,50 +402,8 @@ function App() {
   useEffect(() => {
     console.log('App: workoutPlan updated (version:', planVersion, '):', workoutPlan);
   }, [workoutPlan, planVersion]);
-  const handleShopPurchase = (item: any) => {
-    // Deduct energy and add item to user inventory (simplified)
-    setUserData((prev: any) => {
-      if (!prev) return prev;
-      const itemPrice = Number(item?.price ?? 0);
-      const newEnergy = Math.max(0, (prev.energy ?? 0) - itemPrice);
-      const inventory = Array.isArray(prev.inventory) ? [...prev.inventory] : [];
-      const itemId = String(item?.id || '');
-      let nextInventory = [...inventory];
-      if (itemId.startsWith('streak-saver')) {
-        const quantity = Number(item?.quantity ?? item?.count ?? 1);
-        const normalizedQuantity = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
-        const existingIndex = nextInventory.findIndex((entry: any) => String(entry?.id || '').startsWith('streak-saver'));
-        const purchasedItem = {
-          ...item,
-          quantity: normalizedQuantity,
-          purchased_at: new Date().toISOString()
-        };
-        if (existingIndex >= 0) {
-          const existing = nextInventory[existingIndex];
-          const existingQty = Number(existing.quantity ?? existing.count ?? 1);
-          nextInventory[existingIndex] = {
-            ...existing,
-            ...purchasedItem,
-            quantity: (Number.isFinite(existingQty) ? existingQty : 1) + normalizedQuantity
-          };
-        } else {
-          nextInventory.push(purchasedItem);
-        }
-      } else {
-        nextInventory.push(item);
-      }
-      const nextUser = { ...prev, energy: newEnergy, inventory: nextInventory };
-      try {
-        saveUserData({ data: nextUser }, { skipBackup: true });
-          sessionStorage.setItem('fitbuddyai_local_user_override', '1');
-          localStorage.setItem('fitbuddyai_local_user_override', '1');
-        window.dispatchEvent(new Event('storage'));
-      } catch (error) {
-        console.warn('[App] Failed to persist local shop purchase:', error);
-      }
-      return nextUser;
-    });
-    // Optionally: show a toast or animation
+  const handleShopPurchase = (_item: any) => {
+    // ShopPage already persists the server response and emits a storage refresh.
   };
 
   const handleRedeemStreakSaver = (): string | null => {

@@ -207,8 +207,8 @@ const userBuyLimiter = rateLimit({
 
 const app = express();
 app.use(cors());
-// Large AI-generated workout plans can exceed the default JSON body limit.
-app.use(bodyParser.json({ limit: '20mb' }));
+app.use(bodyParser.json({ limit: '1mb' }));
+app.use('/api/ai', bodyParser.json({ limit: '20mb' }));
 // Simple request logger to help debug routing issues in dev
 app.use((req, res, next) => {
   try {
@@ -227,6 +227,12 @@ function isAdminRequest(req) {
   if (!adminToken) return true; // no token configured -> allow (dev only)
   const auth = String(req.headers.authorization || req.headers.Authorization || '');
   return auth === `Bearer ${adminToken}`;
+}
+
+function getBearerToken(req) {
+  const auth = String(req.headers.authorization || req.headers.Authorization || '');
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : null;
 }
 
 app.get('/api/admin/users', adminUsersLimiter, async (req, res) => {
@@ -431,74 +437,31 @@ app.post('/api/user/buy', userBuyLimiter, async (req, res) => {
     if (!id || !item) return res.status(400).json({ message: 'User ID and item required.' });
     if (!supabase) return res.status(500).json({ message: 'Supabase not configured.' });
 
-    const itemPrice = Number(item.price);
-    if (!Number.isFinite(itemPrice) || itemPrice < 0) {
-      return res.status(400).json({ message: 'Invalid item price.' });
+    const token = getBearerToken(req);
+    if (!token) return res.status(401).json({ message: 'Missing Authorization token.' });
+
+    const { data: authData, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !authData?.user?.id) {
+      return res.status(401).json({ message: 'Invalid or expired token.' });
+    }
+    if (authData.user.id !== id) {
+      return res.status(403).json({ message: 'Token does not match user.' });
     }
 
-    const { data: user, error: fetchError } = await supabase
-      .from('fitbuddyai_userdata')
-      .select('*')
-      .eq('user_id', id)
-      .maybeSingle();
+    const { data: updatedUser, error: purchaseError } = await supabase.rpc('buy_shop_item_atomic', {
+      p_user_id: id,
+      p_item: item
+    });
 
-    if (fetchError) {
-      console.error('[authServer] /api/user/buy fetch error', fetchError);
-      return res.status(500).json({ message: 'Failed to load user.' });
-    }
-    if (!user) return res.status(404).json({ message: 'User not found.' });
-
-    const currentEnergy = Number.isFinite(Number(user.energy)) ? Number(user.energy) : 0;
-    if (currentEnergy < itemPrice) {
-      return res.status(400).json({ message: 'Not enough energy.' });
-    }
-
-    const nextInventory = Array.isArray(user.inventory) ? [...user.inventory] : [];
-    const itemId = String(item.id || '');
-    const purchasedItem = {
-      ...item,
-      price: itemPrice,
-      purchased_at: new Date().toISOString()
-    };
-
-    if (itemId.startsWith('streak-saver')) {
-      const quantity = Number(item.quantity ?? item.count ?? 1);
-      const normalizedQuantity = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
-      const existingIndex = nextInventory.findIndex((entry) => String(entry?.id || '').startsWith('streak-saver'));
-      if (existingIndex >= 0) {
-        const existing = nextInventory[existingIndex];
-        const existingQty = Number(existing?.quantity ?? existing?.count ?? 1);
-        nextInventory[existingIndex] = {
-          ...existing,
-          ...purchasedItem,
-          quantity: (Number.isFinite(existingQty) ? existingQty : 1) + normalizedQuantity
-        };
-      } else {
-        nextInventory.push({ ...purchasedItem, quantity: normalizedQuantity });
+    if (purchaseError) {
+      console.error('[authServer] /api/user/buy rpc error', purchaseError);
+      if (String(purchaseError.message || '').toLowerCase().includes('insufficient energy')) {
+        return res.status(400).json({ message: 'Not enough energy.' });
       }
-    } else {
-      nextInventory.push(purchasedItem);
-    }
-
-    const updates = {
-      energy: currentEnergy - itemPrice,
-      inventory: nextInventory,
-      updated_at: new Date().toISOString()
-    };
-
-    const { data: updatedUser, error: updateError } = await supabase
-      .from('fitbuddyai_userdata')
-      .update(updates)
-      .eq('user_id', id)
-      .select('*')
-      .maybeSingle();
-
-    if (updateError) {
-      console.error('[authServer] /api/user/buy update error', updateError);
       return res.status(500).json({ message: 'Failed to save purchase.' });
     }
 
-    const { password: _password, ...userSafe } = updatedUser || { ...user, ...updates };
+    const { password: _password, ...userSafe } = updatedUser || {};
     return res.json({ user: userSafe });
   } catch (err) {
     console.error('[authServer] /api/user/buy unexpected', err);

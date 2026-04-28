@@ -143,9 +143,7 @@ const ShopPage: React.FC<ShopPageProps> = ({ user, onPurchase, onRedeemStreakSav
     setPurchasing(null);
     if (updated) {
       try {
-        const nextInventory = Array.isArray(updated.inventory) ? [...updated.inventory] : (Array.isArray(user.inventory) ? [...user.inventory] : []);
-        const nextEnergy = Math.max(0, (updated.energy ?? user.energy) - item.price);
-        const nextUser = { ...user, ...updated, energy: nextEnergy, inventory: nextInventory };
+        const nextUser = { ...user, ...updated, energy: updated.energy ?? user.energy, inventory: Array.isArray(updated.inventory) ? updated.inventory : (Array.isArray(user.inventory) ? user.inventory : []) };
         saveUserData({ data: nextUser });
         onPurchase(item);
       } catch (e) {

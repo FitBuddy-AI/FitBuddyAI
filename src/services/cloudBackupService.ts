@@ -14,7 +14,7 @@ export async function backupUserDataToServer(userId: string) {
   if (fitbuddyai_questionnaire_progress != null) payload.fitbuddyai_questionnaire_progress = fitbuddyai_questionnaire_progress;
   if (fitbuddyai_workout_plan != null) payload.fitbuddyai_workout_plan = fitbuddyai_workout_plan;
   if (fitbuddyai_assessment_data != null) payload.fitbuddyai_assessment_data = fitbuddyai_assessment_data;
-  // include chat history and user data if present so server can persist chat_history into payload
+  // include chat history and the user snapshot if present so the server can associate the backup correctly
   if (fitbuddyai_chat != null) payload.chat_history = fitbuddyai_chat;
 
     // Attach local fitbuddyai_user_data so server can cross-check client identity when needed

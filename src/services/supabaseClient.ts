@@ -11,8 +11,41 @@ if (!supabaseUrl || !supabaseAnonKey) {
 	throw new Error('Supabase URL and Key are required.');
 }
 
-// Do NOT persist Supabase sessions into localStorage. We want auth tokens
-// only in sessionStorage (ephemeral) and never written to localStorage.
+const sessionStorageAdapter = {
+	getItem: (key: string) => {
+		if (typeof window === 'undefined') return null;
+		try {
+			return window.sessionStorage.getItem(key);
+		} catch {
+			return null;
+		}
+	},
+	setItem: (key: string, value: string) => {
+		if (typeof window === 'undefined') return;
+		try {
+			window.sessionStorage.setItem(key, value);
+		} catch {
+			// no-op
+		}
+	},
+	removeItem: (key: string) => {
+		if (typeof window === 'undefined') return;
+		try {
+			window.sessionStorage.removeItem(key);
+		} catch {
+			// no-op
+		}
+	}
+};
+
+// Persist Supabase sessions only in sessionStorage (not localStorage) and
+// use PKCE for OAuth to avoid returning raw access tokens in URL fragments.
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-	auth: { persistSession: false }
+	auth: {
+		persistSession: true,
+		autoRefreshToken: true,
+		detectSessionInUrl: true,
+		flowType: 'pkce',
+		storage: sessionStorageAdapter
+	}
 });

@@ -69,6 +69,51 @@ function App() {
 
   useEffect(() => {
     if (!useSupabase) return;
+    let cancelled = false;
+
+    const hydrateFromSupabaseSession = async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) {
+          console.warn('[App] Failed to read Supabase session on startup', error);
+          return;
+        }
+
+        const session = data?.session;
+        if (!session?.user?.id) return;
+
+        if (session.access_token) {
+          try { saveAuthToken(session.access_token); } catch {}
+        }
+
+        try {
+          await fetch('/api/auth?action=store_refresh', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: session.user.id, refresh_token: session.refresh_token })
+          });
+        } catch (refreshStoreErr) {
+          console.warn('[App] Failed to persist refresh token after OAuth callback', refreshStoreErr);
+        }
+
+        const freshUser = await fetchUserById(session.user.id);
+        if (!freshUser || cancelled) return;
+
+        saveUserData({ data: freshUser, token: session.access_token || null }, { skipBackup: true });
+        setUserData(freshUser);
+        try { window.dispatchEvent(new Event('fitbuddyai-login')); } catch {}
+      } catch (err) {
+        console.warn('[App] Supabase startup session hydration failed', err);
+      }
+    };
+
+    hydrateFromSupabaseSession();
+    return () => { cancelled = true; };
+  }, [useSupabase]);
+
+  useEffect(() => {
+    if (!useSupabase) return;
     const { data: authListener } = supabase.auth.onAuthStateChange((_, session) => {
       if (session) {
         try { saveSupabaseSession(session); } catch {}

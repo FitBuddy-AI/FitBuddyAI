@@ -231,8 +231,10 @@ function isAdminRequest(req) {
 
 function getBearerToken(req) {
   const auth = String(req.headers.authorization || req.headers.Authorization || '');
-  const match = auth.match(/^Bearer\s+(.+)$/i);
-  return match ? match[1].trim() : null;
+  if (!auth) return null;
+  if (!auth.toLowerCase().startsWith('bearer ')) return null;
+  const token = auth.slice(7).trim();
+  return token || null;
 }
 
 app.get('/api/admin/users', adminUsersLimiter, async (req, res) => {

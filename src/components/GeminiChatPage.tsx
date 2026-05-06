@@ -15,9 +15,18 @@ const normalizeChatText = (text: string) => {
 const MAX_PLAN_SNIPPET_CHARS = 10000; // allow richer workoutPlan context for chat personalization
 const MAX_HISTORY_MESSAGES = 12; // limit context length to speed up LLM responses
 
-const isInternalChatLink = (href: string) => href.startsWith('/') && !href.startsWith('//');
+const isInternalChatLink = (href: string) => href.startsWith('/') && !href.startsWith('//') && !href.includes('\\');
 
-const isSafeChatHref = (href: string) => isInternalChatLink(href) || /^https?:\/\//i.test(href);
+const isSafeExternalChatHref = (href: string) => {
+  try {
+    const parsed = new URL(href);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+const isSafeChatHref = (href: string) => isInternalChatLink(href) || isSafeExternalChatHref(href);
 
 const trimTrailingPunctuation = (value: string) => {
   let end = value.length;
@@ -40,30 +49,19 @@ const renderChatText = (text: string) => {
     }
 
     const markdownToken = match[1];
-    const markdownLabel = match[2];
     const markdownHref = match[3];
     const rawHref = match[4];
+    if (markdownToken) {
+      output.push(markdownToken);
+      lastIndex = tokenRegex.lastIndex;
+      continue;
+    }
+
     const href = trimTrailingPunctuation(markdownHref || rawHref || '');
     const trailing = (markdownHref || rawHref || '').slice(href.length);
     const key = `chat-link-${output.length}`;
 
-    if (markdownLabel && markdownHref) {
-      if (!isSafeChatHref(href)) {
-        output.push(markdownToken);
-      } else {
-        output.push(
-          isInternalChatLink(href) ? (
-            <Link key={key} to={href} className="msg-link">
-              {markdownLabel}
-            </Link>
-          ) : (
-            <a key={key} href={href} target="_blank" rel="noopener noreferrer" className="msg-link">
-              {markdownLabel}
-            </a>
-          )
-        );
-      }
-    } else if (href) {
+    if (href && isSafeChatHref(href)) {
       output.push(
         isInternalChatLink(href) ? (
           <Link key={key} to={href} className="msg-link">
@@ -75,6 +73,8 @@ const renderChatText = (text: string) => {
           </a>
         )
       );
+    } else if (href) {
+      output.push(href);
     }
 
     if (trailing) {

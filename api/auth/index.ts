@@ -132,8 +132,10 @@ function makeSessionId() {
 
 function getBearerToken(req: any): string | null {
   const authHeader = String(req.headers['authorization'] || req.headers['Authorization'] || '');
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  return match ? match[1].trim() : null;
+  if (!authHeader) return null;
+  if (!authHeader.toLowerCase().startsWith('bearer ')) return null;
+  const token = authHeader.slice(7).trim();
+  return token || null;
 }
 
 async function requireMatchingUser(req: any, expectedUserId: string): Promise<boolean> {
@@ -160,10 +162,11 @@ export async function requireAdmin(req: any): Promise<AdminJwtPayload | null> {
     return null;
   }
   const authHeader = String(req.headers['authorization'] || req.headers['Authorization'] || '');
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (!match) return null;
+  if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) return null;
+  const token = authHeader.slice(7).trim();
+  if (!token) return null;
   try {
-    const decoded = jwt.verify(match[1], jwtSecret) as string | AdminJwtPayload;
+    const decoded = jwt.verify(token, jwtSecret) as string | AdminJwtPayload;
     if (typeof decoded === 'object' && decoded && (decoded.role === 'service' || decoded.role === 'admin')) {
       return decoded;
     }

@@ -36,6 +36,26 @@ const trimTrailingPunctuation = (value: string) => {
   return value.slice(0, end);
 };
 
+const escapeHtml = (value: string) =>
+  value.replace(/[&<>"']/g, character => {
+    switch (character) {
+      case '&':
+        return '&amp;';
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '"':
+        return '&quot;';
+      case "'":
+        return '&#39;';
+      default:
+        return character;
+    }
+  });
+
+const renderEscapedText = (value: string, key: string) => <span key={key} dangerouslySetInnerHTML={{ __html: escapeHtml(value) }} />;
+
 const renderChatText = (text: string) => {
   const output: Array<React.ReactNode> = [];
   const source = String(text || '');
@@ -45,47 +65,63 @@ const renderChatText = (text: string) => {
 
   while ((match = tokenRegex.exec(source)) !== null) {
     if (match.index > lastIndex) {
-      output.push(source.slice(lastIndex, match.index));
+      output.push(renderEscapedText(source.slice(lastIndex, match.index), `chat-text-${output.length}`));
     }
 
-    const markdownToken = match[1];
+    // match[1]: full markdown link [text](href)
+    // match[2]: link text (inside [...])
+    // match[3]: link href (inside (...))
+    // match[4]: plain URL (http://... or /...)
+    const markdownText = match[2];
     const markdownHref = match[3];
     const rawHref = match[4];
-    if (markdownToken) {
-      output.push(markdownToken);
-      lastIndex = tokenRegex.lastIndex;
-      continue;
+
+    let href = '';
+    let displayText = '';
+
+    if (markdownHref) {
+      // Markdown link: [text](href) — validate href before creating link
+      href = markdownHref;
+      displayText = markdownText;
+    } else if (rawHref) {
+      // Plain URL: http://... or /... — strip trailing punctuation
+      href = trimTrailingPunctuation(rawHref);
+      displayText = href;
     }
 
-    const href = trimTrailingPunctuation(markdownHref || rawHref || '');
-    const trailing = (markdownHref || rawHref || '').slice(href.length);
     const key = `chat-link-${output.length}`;
 
     if (href && isSafeChatHref(href)) {
+      // Safe href: create a clickable link
       output.push(
         isInternalChatLink(href) ? (
           <Link key={key} to={href} className="msg-link">
-            {href}
+            {renderEscapedText(displayText, `${key}-text`)}
           </Link>
         ) : (
           <a key={key} href={href} target="_blank" rel="noopener noreferrer" className="msg-link">
-            {href}
+            {renderEscapedText(displayText, `${key}-text`)}
           </a>
         )
       );
     } else if (href) {
-      output.push(href);
+      // Unsafe href: output link text only (don't make it clickable)
+      output.push(renderEscapedText(displayText, `${key}-text`));
     }
 
-    if (trailing) {
-      output.push(trailing);
+    // Handle trailing punctuation for plain URLs only
+    if (rawHref && displayText !== rawHref) {
+      const trailing = rawHref.slice(displayText.length);
+      if (trailing) {
+        output.push(renderEscapedText(trailing, `${key}-trailing`));
+      }
     }
 
     lastIndex = tokenRegex.lastIndex;
   }
 
   if (lastIndex < source.length) {
-    output.push(source.slice(lastIndex));
+    output.push(renderEscapedText(source.slice(lastIndex), `chat-text-${output.length}`));
   }
 
   return output.length ? output : source;

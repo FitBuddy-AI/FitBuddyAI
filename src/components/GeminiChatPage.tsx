@@ -36,7 +36,9 @@ const trimTrailingPunctuation = (value: string) => {
   return value.slice(0, end);
 };
 
-const renderTextFragment = (value: string, key: string) => <span key={key}>{value}</span>;
+const sanitizeChatFragment = (value: string) => String(value).replace(/[<>]/g, '');
+
+const renderTextFragment = (value: string, key: string) => <span key={key}>{sanitizeChatFragment(value)}</span>;
 
 const renderChatText = (text: string) => {
   const output: Array<React.ReactNode> = [];

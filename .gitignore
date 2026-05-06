@@ -5,3 +5,4 @@ migrated_auth_users.json
 Run_Dev_Server_Command.txt
 dist
 .DS_Store
+.local-test-credentials.json

@@ -86,7 +86,6 @@ const WorkoutCalendar: React.FC<WorkoutCalendarProps> = ({ workoutPlan, userData
     if (!dates.length) return;
     setManualRestOverrides(prev => prev.filter(date => !dates.includes(date)));
   };
-  const previewPlanSeededRef = useRef(false);
   const lastPlanIdRef = useRef<string | null>(initialStoredPlanId);
   const guestUserData: UserData = {
     username: 'Guest',
@@ -100,7 +99,17 @@ const WorkoutCalendar: React.FC<WorkoutCalendarProps> = ({ workoutPlan, userData
     daysPerWeek: '3'
   };
   const effectiveUserData: UserData = userData || guestUserData;
-  const isGuestUser = !userData;
+  const emptyCalendarPlan = useMemo<WorkoutPlan>(() => ({
+    id: 'calendar-empty',
+    name: 'Calendar',
+    description: 'Blank calendar view',
+    startDate: format(currentDate, 'yyyy-MM-dd'),
+    endDate: format(addDays(currentDate, 6), 'yyyy-MM-dd'),
+    totalDays: 0,
+    weeklyStructure: [],
+    dailyWorkouts: []
+  }), [currentDate]);
+  const activeWorkoutPlan = workoutPlan || emptyCalendarPlan;
 
   const parseDaysPerWeekValue = (input?: string | number | null): number | null => {
     if (typeof input === 'number' && !Number.isNaN(input)) {
@@ -128,78 +137,12 @@ const WorkoutCalendar: React.FC<WorkoutCalendarProps> = ({ workoutPlan, userData
   const workoutDaysPerWeekGoal = useMemo(() => {
     const fromSurvey = parseDaysPerWeekValue(effectiveUserData.daysPerWeek);
     if (fromSurvey && fromSurvey >= 1 && fromSurvey <= 7) return fromSurvey;
-    const fromPlan = deriveDaysPerWeekFromStructure(workoutPlan?.weeklyStructure || []);
+    const fromPlan = deriveDaysPerWeekFromStructure(activeWorkoutPlan.weeklyStructure || []);
     if (fromPlan && fromPlan >= 1 && fromPlan <= 7) return fromPlan;
     return 3;
-  }, [effectiveUserData.daysPerWeek, workoutPlan?.weeklyStructure]);
+  }, [effectiveUserData.daysPerWeek, activeWorkoutPlan.weeklyStructure]);
 
   const allowedRestDaysPerWeek = Math.max(0, 7 - workoutDaysPerWeekGoal);
-
-  useEffect(() => {
-    if (workoutPlan || previewPlanSeededRef.current) return;
-    // If a saved plan exists (or the user is signed in), do NOT seed the preview
-    try {
-      const storedPlan = loadWorkoutPlan();
-      if (storedPlan && Array.isArray(storedPlan.dailyWorkouts) && storedPlan.dailyWorkouts.length > 0) {
-        onUpdatePlan(storedPlan);
-        return;
-      }
-      const storedUser = loadUserData();
-      if (storedUser?.id) return;
-    } catch (err) {
-      console.warn('Preview seed guard failed to read storage:', err);
-    }
-    const today = new Date();
-    const start = format(today, 'yyyy-MM-dd');
-    const endDateObj = new Date(today.getTime() + 6 * 24 * 60 * 60 * 1000);
-    const end = format(endDateObj, 'yyyy-MM-dd');
-    const previewDays: DayWorkout[] = Array.from({ length: 7 }).map((_, idx) => {
-      const date = new Date(today.getTime() + idx * 24 * 60 * 60 * 1000);
-      const dateStr = format(date, 'yyyy-MM-dd');
-      const type = idx % 3 === 0 ? 'strength' : idx % 3 === 1 ? 'cardio' : 'rest';
-      const isRest = type === 'rest';
-      return {
-        date: dateStr,
-        type: type as DayWorkout['type'],
-        completed: false,
-        totalTime: isRest ? '0 min' : '30 min',
-        workouts: isRest
-          ? [{
-              name: 'Rest Day',
-              description: 'Take a breather before your next session.',
-              difficulty: 'beginner',
-              duration: '0 min',
-              reps: '',
-              muscleGroups: [],
-              equipment: []
-            }]
-          : [{
-              name: idx % 3 === 0 ? 'Bodyweight Circuit' : 'Tempo Walk',
-              description: idx % 3 === 0
-                ? 'Squats, pushups, and lunges to warm up your whole body.'
-                : 'Light cardio to keep you moving.',
-              difficulty: 'beginner',
-              duration: '30 minutes',
-              reps: idx % 3 === 0 ? '3 rounds' : '20 min',
-              muscleGroups: idx % 3 === 0 ? ['full body'] : ['cardio'],
-              equipment: idx % 3 === 0 ? [] : ['sneakers']
-            }],
-        alternativeWorkouts: []
-      };
-    });
-    const previewPlan: WorkoutPlan = {
-      id: 'preview-plan',
-      name: 'Preview Plan',
-      description: 'Preview the schedule builder. Complete the questionnaire to personalize your plan.',
-      startDate: start,
-      endDate: end,
-      totalDays: previewDays.length,
-      weeklyStructure: ['Strength', 'Cardio', 'Rest', 'Strength', 'Cardio', 'Rest', 'Mixed'],
-      dailyWorkouts: previewDays
-    };
-    previewPlanSeededRef.current = true;
-    onUpdatePlan(previewPlan);
-  }, [workoutPlan, onUpdatePlan]);
 
   useEffect(() => {
     if (!workoutPlan || workoutPlan.dailyWorkouts.length === 0) return;
@@ -375,7 +318,7 @@ const WorkoutCalendar: React.FC<WorkoutCalendarProps> = ({ workoutPlan, userData
         const pattern = Array.isArray(workoutPlan.weeklyStructure) ? workoutPlan.weeklyStructure : [];
         const totalDays = typeof workoutPlan.totalDays === 'number' && workoutPlan.totalDays > 0
           ? workoutPlan.totalDays
-          : (workoutPlan.dailyWorkouts ? workoutPlan.dailyWorkouts.length : 0);
+          : (workoutPlan?.dailyWorkouts ? workoutPlan.dailyWorkouts.length : 0);
 
         if (workoutPlan.startDate && totalDays > 0 && pattern.length === 7) {
           const startParts = workoutPlan.startDate.split('-').map(Number);
@@ -447,24 +390,6 @@ updatedWorkouts = updatedWorkouts.map(workout => {
   }, [workoutPlan, onUpdatePlan]);
 
   const displayName = (userData?.username?.trim()) || effectiveUserData.username || effectiveUserData.name || 'Guest';
-
-  if (!workoutPlan) {
-    return (
-      <div className="calendar-page">
-        <BackgroundDots />
-        <div className="calendar-container">
-          <div className="calendar-preview-callout fade-in-bounce">
-            <div className="calendar-no-plan-icon-bg">
-              <Dumbbell size={48} color="#fff" />
-            </div>
-            <h2 className="calendar-no-plan-message">Building a preview schedule...</h2>
-            <p className="calendar-no-plan-desc">Hang tight — a starter calendar will load so you can explore the schedule builder before filling the questionnaire.</p>
-            <a className="calendar-no-plan-btn" href="/questionnaire">Start questionnaire</a>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
@@ -581,7 +506,7 @@ updatedWorkouts = updatedWorkouts.map(workout => {
 
   const getWorkoutForDate = (date: Date): DayWorkout | null => {
   const dateString = formatDate(date.toISOString());
-  const workout = workoutPlan.dailyWorkouts.find(workout => workout.date === dateString) || null;
+  const workout = activeWorkoutPlan.dailyWorkouts.find(workout => workout.date === dateString) || null;
   return workout;
   };  const handleDayClick = (date: Date) => {
      const dateString = format(date, 'yyyy-MM-dd');
@@ -640,7 +565,7 @@ updatedWorkouts = updatedWorkouts.map(workout => {
       window.showFitBuddyNotification?.({ title: 'Only Today', message: "You can only complete or undo today's workout.", variant: 'warning' });
       return;
     }
-    const updatedWorkouts = workoutPlan.dailyWorkouts.map(workout => {
+    const updatedWorkouts = activeWorkoutPlan.dailyWorkouts.map(workout => {
       if (workout.date !== workoutDate) return workout;
 
       const types = resolveWorkoutTypes(workout);
@@ -670,7 +595,7 @@ updatedWorkouts = updatedWorkouts.map(workout => {
       };
     });
 
-    const updatedPlan = { ...workoutPlan, dailyWorkouts: updatedWorkouts };
+    const updatedPlan: WorkoutPlan = { ...activeWorkoutPlan, dailyWorkouts: updatedWorkouts };
     onUpdatePlan(updatedPlan);
     try { console.debug('[WorkoutCalendar] updated plan prepared, invoking onUpdatePlan and updateStreakCounter', { updatedPlanCount: updatedPlan.dailyWorkouts.length }); } catch {}
     // Persist plan immediately to localStorage to ensure JSON reflects the change
@@ -780,8 +705,8 @@ updatedWorkouts = updatedWorkouts.map(workout => {
     return formatSingle(types[0]);
   };
 
-  const completedWorkouts = workoutPlan.dailyWorkouts.filter(w => w.completed && getPrimaryType(w) !== 'rest').length;
-  const totalWorkouts = workoutPlan.dailyWorkouts.filter(w => getPrimaryType(w) !== 'rest').length;
+  const completedWorkouts = activeWorkoutPlan.dailyWorkouts.filter(w => w.completed && getPrimaryType(w) !== 'rest').length;
+  const totalWorkouts = activeWorkoutPlan.dailyWorkouts.filter(w => getPrimaryType(w) !== 'rest').length;
   const progressPercentage = totalWorkouts > 0 ? (completedWorkouts / totalWorkouts) * 100 : 0;
 
   // Calculate total workout time by summing individual workout durations
@@ -2009,14 +1934,6 @@ updatedWorkouts = updatedWorkouts.map(workout => {
     <div className="calendar-page">
       <BackgroundDots />
       <div className="calendar-container">
-        {isGuestUser && (
-          <div className="calendar-preview-banner">
-            <div className="banner-text">
-              <strong>Preview mode:</strong> Explore the scheduler now. Complete the questionnaire to let the AI personalize your plan.
-            </div>
-            <a className="calendar-no-plan-btn" href="/questionnaire">Complete questionnaire</a>
-          </div>
-        )}
         {/* Header */}
           <div className="calendar-header">
             <div className="user-info">
@@ -2125,9 +2042,18 @@ updatedWorkouts = updatedWorkouts.map(workout => {
         {/* Calendar Grid */}
         <div className="calendar-grid">
           {/* Day headers */}
-          {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => (
-            <div key={day} className="day-header">
-              {day}
+          {[
+            { full: 'Sunday', short: 'Sun' },
+            { full: 'Monday', short: 'Mon' },
+            { full: 'Tuesday', short: 'Tue' },
+            { full: 'Wednesday', short: 'Wed' },
+            { full: 'Thursday', short: 'Thu' },
+            { full: 'Friday', short: 'Fri' },
+            { full: 'Saturday', short: 'Sat' }
+          ].map(day => (
+            <div key={day.full} className="day-header" aria-label={day.full}>
+              <span className="day-header-full">{day.full}</span>
+              <span className="day-header-short" aria-hidden="true">{day.short}</span>
             </div>
           ))}
           {/* Calendar days (first day is positioned via start-N class, no placeholder cells needed) */}
@@ -2156,7 +2082,7 @@ updatedWorkouts = updatedWorkouts.map(workout => {
             const multiGradient = isMultiType && typeList.length > 1
               ? buildMultiTypeGradient(typeList as WorkoutType[])
               : undefined;
-            const cellStreak = isStreakCompleteDay ? computeStreak(workoutPlan.dailyWorkouts, date) : 0;
+            const cellStreak = isStreakCompleteDay ? computeStreak(activeWorkoutPlan.dailyWorkouts, date) : 0;
             
             const firstStartClass = idx === 0 ? ` start-${monthStartIndex + 1}` : '';
 
@@ -2495,7 +2421,7 @@ updatedWorkouts = updatedWorkouts.map(workout => {
                     Cancel
                   </button>
                 </div>
-                {selectedWorkoutDate && workoutPlan?.dailyWorkouts.find(w => w.date === selectedWorkoutDate) && (
+                {selectedWorkoutDate && activeWorkoutPlan.dailyWorkouts.find(w => w.date === selectedWorkoutDate) && (
                   <div className="error-message">
                     This date already has a workout. Please select a different date.
                   </div>

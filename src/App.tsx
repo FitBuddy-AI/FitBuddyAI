@@ -3,7 +3,7 @@ import Questionnaire from './components/Questionnaire';
 import { useNavigate, Navigate } from 'react-router-dom';
 import WorkoutCalendar from './components/WorkoutCalendar';
 import AgreementGuard from './components/AgreementGuard';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -19,7 +19,7 @@ import EmailVerifyPage from './components/EmailVerifyPage';
 
 
 import { WorkoutPlan, DayWorkout, Exercise } from './types';
-import { loadUserData, loadWorkoutPlan, saveUserData, saveWorkoutPlan, clearUserData, getAuthToken, loadSupabaseSession, saveSupabaseSession, clearSupabaseSession, saveAuthToken } from './services/localStorage';
+import { loadUserData, loadWorkoutPlan, saveUserData, saveWorkoutPlan, clearUserData, getAuthToken, saveAuthToken } from './services/localStorage';
 import { fetchUserById } from './services/authService';
 import { format } from 'date-fns';
 import { getPrimaryType, isWorkoutCompleteForStreak, resolveWorkoutTypes } from './utils/streakUtils';
@@ -33,6 +33,7 @@ import AdminPage from './components/AdminAuditPage';
 import { useCloudBackup } from './hooks/useCloudBackup';
 import RickrollPage from './components/RickrollPage';
 import BlogPage from './components/BlogPage';
+import BlogListPage from './components/BlogListPage';
 import AgreementBanner from './components/AgreementBanner';
 import TermsPage from './components/TermsPage';
 import PrivacyPage from './components/PrivacyPage';
@@ -42,7 +43,9 @@ import WorkoutsPage from './components/WorkoutsPage';
 import MyPlanPage from './components/MyPlanPage';
 import PersonalLibraryPage from './components/PersonalLibraryPage';
 import SuggestWorkout from './components/SuggestWorkout';
+import NewIntroPage from './components/NewIntroPage';
 import { autoSaveWorkoutsFromAssessment } from './services/assessmentWorkouts';
+import { loadHomeIntroEnabled, saveHomeIntroEnabled } from './services/localStorage';
 
 function App() {
   const [userData, setUserData] = useState<any | null>(null);
@@ -51,6 +54,9 @@ function App() {
   const navigate = useNavigate();
   const [profileVersion, setProfileVersion] = useState(0);
   const [isHydratingUser, setIsHydratingUser] = useState(true);
+  const lastServerUserSyncRef = useRef(0);
+  const lastSavedUserSnapshotRef = useRef('');
+  const [homeIntroEnabled, setHomeIntroEnabled] = useState(() => loadHomeIntroEnabled());
   const useSupabase = Boolean(import.meta.env.VITE_LOCAL_USE_SUPABASE || import.meta.env.VITE_SUPABASE_URL);
   // themeMode: 'auto' | 'light' | 'dark'
   const [themeMode, setThemeMode] = useState<'auto' | 'light' | 'dark'>(() => {
@@ -66,6 +72,27 @@ function App() {
 
   // Cloud backup/restore integration
   useCloudBackup();
+
+  const getStoredUserTimestamp = () => {
+    if (typeof window === 'undefined') return 0;
+    const raw = sessionStorage.getItem('fitbuddyai_user_data') || localStorage.getItem('fitbuddyai_user_data_persisted');
+    if (!raw) return 0;
+    try {
+      const parsed = JSON.parse(raw);
+      return Number(parsed?.timestamp || 0) || 0;
+    } catch (_err) {
+      return 0;
+    }
+  };
+
+  const hasLocalUserOverride = () => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return Boolean(sessionStorage.getItem('fitbuddyai_local_user_override') || localStorage.getItem('fitbuddyai_local_user_override'));
+    } catch (_err) {
+      return false;
+    }
+  };
 
   useEffect(() => {
     if (!useSupabase) return;
@@ -116,12 +143,19 @@ function App() {
     if (!useSupabase) return;
     const { data: authListener } = supabase.auth.onAuthStateChange((_, session) => {
       if (session) {
-        try { saveSupabaseSession(session); } catch {}
+        try {
+          fetch('/api/auth?action=store_refresh', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: session.user?.id, refresh_token: session.refresh_token })
+          }).catch(() => {});
+        } catch (_e) {}
         if (session.access_token) {
           try { saveAuthToken(session.access_token); } catch {}
         }
       } else {
-        try { clearSupabaseSession(); } catch {}
+        try { fetch('/api/auth?action=clear_refresh', { method: 'POST', credentials: 'include' }).catch(() => {}); } catch {}
       }
     });
     return () => {
@@ -199,17 +233,31 @@ function App() {
     setThemeModeHandler(themeMode === 'dark' ? 'light' : 'dark');
   };
 
+  const toggleHomeIntro = () => {
+    const next = !homeIntroEnabled;
+    setHomeIntroEnabled(next);
+    saveHomeIntroEnabled(next);
+  };
+
   // Poll user from server periodically if logged in. Throttle to reduce load and
   // avoid polling when the page is hidden (background tab).
   useEffect(() => {
     if (!userData?.id) return;
+    if (hasLocalUserOverride()) return;
+    lastServerUserSyncRef.current = Math.max(lastServerUserSyncRef.current, getStoredUserTimestamp());
     let stopped = false;
     const fetchAndUpdate = async () => {
       if (stopped) return;
       // Don't poll while page is hidden to avoid unnecessary background traffic
       if (typeof document !== 'undefined' && document.hidden) return;
       const fresh = await fetchUserById(userData.id);
-      if (fresh) setUserData(fresh);
+      if (!fresh) return;
+      const localTimestamp = getStoredUserTimestamp();
+      if (localTimestamp > lastServerUserSyncRef.current) {
+        return;
+      }
+      lastServerUserSyncRef.current = Date.now();
+      setUserData(fresh);
     };
     // Run an initial check quickly, then throttle to a longer interval
     fetchAndUpdate();
@@ -225,6 +273,18 @@ function App() {
     const handleLogout = () => setUserData(null);
     window.addEventListener('fitbuddyai-logout', handleLogout);
     return () => window.removeEventListener('fitbuddyai-logout', handleLogout);
+  }, []);
+
+  useEffect(() => {
+    const handleHomeIntroChanged = () => {
+      setHomeIntroEnabled(loadHomeIntroEnabled());
+    };
+    window.addEventListener('fitbuddyai-home-intro-changed', handleHomeIntroChanged as EventListener);
+    window.addEventListener('storage', handleHomeIntroChanged);
+    return () => {
+      window.removeEventListener('fitbuddyai-home-intro-changed', handleHomeIntroChanged as EventListener);
+      window.removeEventListener('storage', handleHomeIntroChanged);
+    };
   }, []);
 
   // Listen for login event (dispatched after sign-in/restore) and sync saved data into state
@@ -294,7 +354,7 @@ function App() {
     }
     return () => {
       window.removeEventListener('storage', syncUser);
-      try { if (bc) { bc.close(); } } catch (e) {}
+      try { if (bc) { bc.close(); } } catch (_e) {}
     };
   }, []);
 
@@ -305,19 +365,18 @@ function App() {
     (async () => {
       if (useSupabase) {
         try {
-          const storedSession = loadSupabaseSession();
-          if (storedSession?.access_token && storedSession?.refresh_token) {
-            await supabase.auth.setSession({
-              access_token: storedSession.access_token,
-              refresh_token: storedSession.refresh_token
-            });
-            if (storedSession.access_token) {
-              try { saveAuthToken(storedSession.access_token); } catch {}
+          const resp = await fetch('/api/auth?action=refresh', {
+            method: 'POST',
+            credentials: 'include'
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data?.access_token) {
+              try { saveAuthToken(data.access_token); } catch {}
             }
           }
         } catch (err) {
-          console.warn('[App] Supabase session restore failed', err);
-          try { clearSupabaseSession(); } catch {}
+          console.warn('[App] Supabase server-side refresh failed', err);
         }
       }
       const savedUserData = loadUserData();
@@ -325,11 +384,24 @@ function App() {
       console.log('App startup - loadUserData ->', savedUserData);
       console.log('App startup - loadWorkoutPlan ->', savedWorkoutPlan);
       if (!cancelled && savedUserData) {
+        lastServerUserSyncRef.current = Math.max(lastServerUserSyncRef.current, getStoredUserTimestamp());
+        try { lastSavedUserSnapshotRef.current = JSON.stringify(savedUserData); } catch { lastSavedUserSnapshotRef.current = ''; }
         setUserData(savedUserData);
         if (savedUserData.id) {
+          if (hasLocalUserOverride()) {
+            setIsHydratingUser(false);
+            return;
+          }
           try {
             const freshUser = await fetchUserById(savedUserData.id);
-            if (!cancelled && freshUser) setUserData(freshUser);
+            if (!cancelled && freshUser) {
+              const localTimestamp = getStoredUserTimestamp();
+              if (localTimestamp <= lastServerUserSyncRef.current) {
+                lastServerUserSyncRef.current = Date.now();
+                try { lastSavedUserSnapshotRef.current = JSON.stringify(freshUser); } catch { lastSavedUserSnapshotRef.current = ''; }
+                setUserData(freshUser);
+              }
+            }
           } catch (e) {
             // ignore fetch failure, keep saved data
           }
@@ -349,6 +421,10 @@ function App() {
     // Avoid clearing persisted session while we are still hydrating from storage
     if (isHydratingUser) return;
     if (userData) {
+      let snapshot = '';
+      try { snapshot = JSON.stringify(userData); } catch { snapshot = ''; }
+      if (snapshot && snapshot === lastSavedUserSnapshotRef.current) return;
+      lastSavedUserSnapshotRef.current = snapshot;
       // Save local userData without triggering the cloud backup scheduler.
       // Cloud backups for chat are triggered explicitly from appendChatMessage to avoid
       // frequent empty saves while the app polls for user updates.
@@ -356,6 +432,7 @@ function App() {
     } else {
       // If userData is null, clear user data from storage
       // (defensive, in case logout event missed)
+      lastSavedUserSnapshotRef.current = '';
       clearUserData();
     }
   }, [userData, isHydratingUser]);
@@ -370,15 +447,8 @@ function App() {
   useEffect(() => {
     console.log('App: workoutPlan updated (version:', planVersion, '):', workoutPlan);
   }, [workoutPlan, planVersion]);
-  const handleShopPurchase = (item: any) => {
-    // Deduct energy and add item to user inventory (simplified)
-    setUserData((prev: any) => {
-      if (!prev) return prev;
-      const newEnergy = (prev.energy || 0) - item.price;
-      const inventory = Array.isArray(prev.inventory) ? prev.inventory : [];
-      return { ...prev, energy: newEnergy, inventory: [...inventory, item] };
-    });
-    // Optionally: show a toast or animation
+  const handleShopPurchase = (_item: any) => {
+    // ShopPage already persists the server response and emits a storage refresh.
   };
 
   const handleRedeemStreakSaver = (): string | null => {
@@ -528,7 +598,7 @@ function App() {
       <AgreementBanner userData={userData} />
       <main className="app-main">
         <Routes>
-        <Route path="/" element={<WelcomePage />} />
+        <Route path="/" element={<WelcomePage homeIntroEnabled={homeIntroEnabled} />} />
         <Route path="/workouts" element={<WorkoutsPage />} />
         <Route path="/library" element={<PersonalLibraryPage />} />
         <Route path="/profile" element={<ProfilePage userData={userData} onProfileUpdate={(user) => {
@@ -544,7 +614,7 @@ function App() {
           setProfileVersion(v => v + 1);
         }} profileVersion={profileVersion} />} />
         <Route path="/profile/achievements" element={<AchievementsPage />} />
-        <Route path="/profile/settings" element={<SettingsPage theme={effectiveThemeClass} onToggleTheme={toggleTheme} />} />
+        <Route path="/profile/settings" element={<SettingsPage theme={effectiveThemeClass} onToggleTheme={toggleTheme} homeIntroEnabled={homeIntroEnabled} onToggleHomeIntro={toggleHomeIntro} />} />
         <Route path="/loading" element={<LoadingPage />} />
         <Route 
           path="/questionnaire" 
@@ -602,7 +672,9 @@ function App() {
           } 
         />
         <Route path="/my-plan" element={<MyPlanPage />} />
-  <Route path="/blog" element={<BlogPage />} />
+        <Route path="/new_intro" element={<NewIntroPage />} />
+    <Route path="/blog" element={<BlogListPage />} />
+    <Route path="/blog/:slug" element={<BlogPage />} />
   <Route path="/chat" element={<AgreementGuard userData={userData}><GeminiChatPage userData={userData} /></AgreementGuard>} />
   <Route path="/admin" element={<AdminPage />} />
   <Route path="/help" element={<HelpCenter />} />

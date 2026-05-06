@@ -143,7 +143,7 @@ const PersonalLibraryPage: React.FC = () => {
   const removeFromPlan = (title: string) => {
     setMyPlan(prev => {
       const next = prev.filter(p => p.title !== title);
-      try { persistSavedNames(next.map(p => p.title)); } catch (e) {}
+      try { persistSavedNames(next.map(p => p.title)); } catch (_e) {}
       return next;
     });
   };

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { saveAssessmentData, saveWorkoutPlan, saveUserData } from '../services/localStorage';
 import { signIn } from '../services/authService';
 import GoogleIdentityButton from './GoogleIdentityButton';
@@ -15,6 +15,13 @@ const SignInPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [resendModalOpen, setResendModalOpen] = useState(false);
   const [resendEmail, setResendEmail] = useState('');
+
+  useEffect(() => {
+    document.body.classList.add('signin-page-screen');
+    return () => {
+      document.body.classList.remove('signin-page-screen');
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,13 +47,12 @@ const SignInPage: React.FC = () => {
               const { getAuthToken, loadUserData } = await import('../services/localStorage');
               const token = getAuthToken() || (loadUserData()?.token) || (loadUserData()?.data?.token) || null;
               if (token) return token;
-            } catch (e) {}
+            } catch (_e) {}
             await new Promise(r => setTimeout(r, 150));
           }
           return null;
         };
         await waitForToken(3000);
-        try { sessionStorage.setItem('fitbuddyaiUsername', data.user.username); } catch {}
         // Attempt to restore any server-stored questionnaire/workout/assessment data
         try {
           await restoreUserDataFromServer(data.user.id);
@@ -79,15 +85,15 @@ const SignInPage: React.FC = () => {
                   continue;
                 }
                 return { res: r, text: t };
-              } catch (e) {
+              } catch (_e) {
                 lastRes = null;
                 lastText = null;
                 if (attempt < maxAttempts) {
-                  console.warn(`[SignInPage] userdata POST attempt ${attempt} threw, retrying after ${delayMs}ms`, e);
+                  console.warn(`[SignInPage] userdata POST attempt ${attempt} threw, retrying after ${delayMs}ms`, _e);
                   await new Promise(r => setTimeout(r, delayMs));
                   continue;
                 }
-                throw e;
+                throw _e;
               }
             }
             return { res: lastRes, text: lastText };
@@ -107,8 +113,8 @@ const SignInPage: React.FC = () => {
             let body: any = null;
             try {
               body = text ? JSON.parse(text) : null;
-            } catch (e) {
-              console.warn('[SignInPage] userdata POST returned invalid JSON; invoking restoreUserDataFromServer fallback', e);
+            } catch (_e) {
+              console.warn('[SignInPage] userdata POST returned invalid JSON; invoking restoreUserDataFromServer fallback', _e);
               try { await restoreUserDataFromServer(data.user.id); } catch (re) { console.warn('[SignInPage] fallback restore failed:', re); }
             }
 
@@ -122,8 +128,8 @@ const SignInPage: React.FC = () => {
                 const planVal = planRaw?.data ?? planRaw ?? null;
                 if (assessmentVal) saveAssessmentData(assessmentVal);
                 if (planVal) saveWorkoutPlan(planVal);
-              } catch (e) {
-                console.warn('Failed to save restored payload values:', e);
+              } catch (_e) {
+                console.warn('Failed to save restored payload values:', _e);
               }
             }
           }
@@ -192,7 +198,7 @@ function ResendConfirmModal({ email, onClose, onSent }: { email: string; onClose
       } else {
         setMsg('Failed to resend verification email. Please contact support.');
       }
-    } catch (e) {
+    } catch (_e) {
       setMsg('Failed to resend verification email. Please contact support.');
     }
     setLoading(false);

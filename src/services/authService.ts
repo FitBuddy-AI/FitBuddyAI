@@ -1,10 +1,21 @@
 // Buy a shop item and update user on server and localStorage
 import attachAuthHeaders from './apiAuth';
 import { supabase } from './supabaseClient';
-import { saveUserData, saveAuthToken, clearAuthToken, loadUserData, saveSupabaseSession, clearSupabaseSession } from './localStorage';
+import { saveUserData, saveAuthToken, clearAuthToken, loadUserData, clearUserData } from './localStorage';
 import { ensureUserId } from '../utils/userHelpers';
 
 const DEFAULT_ENERGY = 10000;
+const PASSWORD_SPECIAL_CHARACTERS = "!@#$%^&*()_+-=[]{};':\"|<>?,./`~";
+const PASSWORD_POLICY_ERROR = 'Password should contain at least one character of each: abcdefghijklmnopqrstuvwxyz, ABCDEFGHIJKLMNOPQRSTUVWXYZ, 0123456789, !@#$%^&*()_+-=[]{};\':"|<>?,./`~.';
+
+export function getPasswordPolicyError(password: string): string | null {
+  const value = String(password || '');
+  if (!/[a-z]/.test(value)) return PASSWORD_POLICY_ERROR;
+  if (!/[A-Z]/.test(value)) return PASSWORD_POLICY_ERROR;
+  if (!/[0-9]/.test(value)) return PASSWORD_POLICY_ERROR;
+  if (!Array.from(value).some((char) => PASSWORD_SPECIAL_CHARACTERS.includes(char))) return PASSWORD_POLICY_ERROR;
+  return null;
+}
 
 export async function buyShopItem(id: string, item: any): Promise<User | null> {
   try {
@@ -14,6 +25,7 @@ export async function buyShopItem(id: string, item: any): Promise<User | null> {
       name: item.name,
       price: item.price,
       type: item.type,
+      quantity: item.quantity ?? null,
       image: item.image || null,
       description: item.description || ''
     };
@@ -23,7 +35,7 @@ export async function buyShopItem(id: string, item: any): Promise<User | null> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, item: safeItem })
     });
-    const res = await fetch('/api/user?action=buy', reqInit);
+    const res = await fetch(`/api/user/${encodeURIComponent(id)}?action=buy`, reqInit);
     if (!res.ok) {
       // Attempt to read structured error code from server
       try {
@@ -47,6 +59,15 @@ export async function buyShopItem(id: string, item: any): Promise<User | null> {
 // Fetch user from server by ID and update localStorage
 export async function fetchUserById(id: string): Promise<User | null> {
   try {
+    const res = await fetch(`/api/user/${id}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.user) {
+        const normalized = ensureUserId(data.user);
+        try { saveUserData({ data: normalized }); } catch {}
+        return normalized as User;
+      }
+    }
     const useSupabase = Boolean(import.meta.env.VITE_LOCAL_USE_SUPABASE || import.meta.env.VITE_SUPABASE_URL);
     if (useSupabase) {
       try {
@@ -58,15 +79,6 @@ export async function fetchUserById(id: string): Promise<User | null> {
       } catch {
         return null;
       }
-    }
-    const res = await fetch(`/api/user/${id}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (data.user) {
-      const nextEnergy = data.user.energy ?? DEFAULT_ENERGY;
-      const next = { ...data.user, energy: nextEnergy };
-      try { saveUserData({ data: next }); } catch {}
-      return next;
     }
     return null;
   } catch {
@@ -110,18 +122,28 @@ export async function signIn(email: string, password: string): Promise<User> {
     const user = result.data.user as any;
     // Determine username: prefer user_metadata.username, else fallback to email temporarily
     let usernameVal = (user.user_metadata && user.user_metadata.username) || null;
-    if (!usernameVal) {
-      // try to read from app_users table if present
+    let avatarVal = (user.user_metadata && (user.user_metadata.avatar || user.user_metadata.avatar_url)) || null;
+    let energyVal = (user.user_metadata && user.user_metadata.energy) ?? DEFAULT_ENERGY;
     try {
-        const { data: profile } = await supabase.from('fitbuddyai_userdata').select('username').eq('user_id', user.id).limit(1).maybeSingle();
-        if (profile && profile.username) usernameVal = profile.username;
-      } catch (e) {
-        // ignore; we'll fallback to email
-      }
+      // Rehydrate the persisted profile row so avatar/energy survive logout and login.
+      const profile = await fetchUserById(user.id);
+      if (profile && profile.username) usernameVal = profile.username;
+      if (profile && (profile.avatar || (profile as any).avatar_url)) avatarVal = profile.avatar || (profile as any).avatar_url;
+      if (profile && typeof profile.energy === 'number') energyVal = profile.energy;
+    } catch (e) {
+      // ignore; we'll fallback to auth metadata
     }
-    try { saveSupabaseSession(session); } catch {}
-  const fallbackEnergy = (user.user_metadata && user.user_metadata.energy) ?? DEFAULT_ENERGY;
-  const toSave = { data: { id: user.id, email: user.email, username: usernameVal || user.email, energy: fallbackEnergy } };
+    try {
+      await fetch('/api/auth?action=store_refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ userId: user.id, refresh_token: session?.refresh_token })
+      });
+    } catch (e) {
+      console.warn('[authService] failed to store refresh token server-side', e);
+    }
+    const toSave = { data: { id: user.id, email: user.email, username: usernameVal || user.email, avatar: avatarVal || '/images/fitbuddy_head.png', energy: energyVal } };
   // Clear any cross-tab 'no auto restore' guard set during sign-out so sign-in can persist data
   try { sessionStorage.removeItem('fitbuddyai_no_auto_restore'); } catch {}
   try { localStorage.removeItem('fitbuddyai_no_auto_restore'); } catch {}
@@ -134,7 +156,7 @@ export async function signIn(email: string, password: string): Promise<User> {
       if (displayName) {
         // Update the authenticated user's metadata with display name and username
         // supabase.auth.updateUser sets user metadata for the current session
-        await supabase.auth.updateUser({ data: { display_name: displayName, username: displayName } });
+        await supabase.auth.updateUser({ data: { display_name: displayName, username: displayName, avatar: toSave.data.avatar } });
       }
     } catch (e: any) {
       // Non-fatal: just log and continue
@@ -167,6 +189,10 @@ export async function signUp(email: string, username: string, password: string):
   const normalizedEmail = String(email).trim().toLowerCase();
   const useSupabase = Boolean(import.meta.env.VITE_LOCAL_USE_SUPABASE || import.meta.env.VITE_SUPABASE_URL);
   if (useSupabase) {
+    const passwordPolicyError = getPasswordPolicyError(password);
+    if (passwordPolicyError) {
+      throw new Error(passwordPolicyError);
+    }
     const result = await supabase.auth.signUp({ email: normalizedEmail, password, options: { data: { username, energy: DEFAULT_ENERGY } } });
     if (result.error) throw new Error(result.error.message || 'Sign up failed');
     // Supabase may not return a session depending on config; if a session exists save token
@@ -177,7 +203,18 @@ export async function signUp(email: string, username: string, password: string):
   // Only persist client-side if we actually received a session/token. For email-verify flows
   // Supabase may require the user to confirm via email before signing in; do not mark them
   // as signed-in (or persist their profile) until a token exists.
-    try { saveSupabaseSession(session); } catch {}
+    try {
+      if (user && session?.refresh_token) {
+        await fetch('/api/auth?action=store_refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ userId: user.id, refresh_token: session.refresh_token })
+        });
+      }
+    } catch (e) {
+      console.warn('[authService] failed to store refresh token server-side', e);
+    }
   if (token && toSave) {
     try { sessionStorage.removeItem('fitbuddyai_no_auto_restore'); } catch {}
     try { localStorage.removeItem('fitbuddyai_no_auto_restore'); } catch {}
@@ -186,11 +223,15 @@ export async function signUp(email: string, username: string, password: string):
     // Ensure server-side app_users and user_data rows exist for this new Supabase user (best-effort).
     try {
       if (user && user.id) {
-        await fetch('/api/auth?action=create_profile', {
+        await fetch('/api/auth?action=create_profile', await attachAuthHeaders({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: user.id, email: user.email, username })
-        });
+          body: JSON.stringify({
+            id: user.id,
+            email: user.email,
+            username
+          })
+        }));
       }
     } catch (e) {
       console.warn('[authService] create_profile call failed', e);
@@ -288,17 +329,47 @@ export function getCurrentUser(): User | null {
   }
 }
 
-export function signOut() {
+export async function signOutAndRevoke(timeoutMs = 2000): Promise<void> {
+  try {
+    const revokeUrl = '/api/auth?action=clear_refresh';
+    let revoked = false;
+    try {
+      if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+        const blob = new Blob([JSON.stringify({})], { type: 'application/json' });
+        try { revoked = navigator.sendBeacon(revokeUrl, blob); } catch { revoked = false; }
+      }
+    } catch {
+      revoked = false;
+    }
+
+    if (!revoked) {
+      try {
+        await Promise.race([
+          fetch(revokeUrl, { method: 'POST', credentials: 'include' }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('revoke_timeout')), timeoutMs))
+        ]);
+      } catch (e) {
+        console.warn('[authService] signOut: clear_refresh request failed or timed out', e);
+      }
+    }
+  } catch (e) {
+    console.warn('[authService] signOut: revoke attempt failed', e);
+  }
+
   try { clearAuthToken(); } catch {}
-  try { clearSupabaseSession(); } catch {}
   try { sessionStorage.removeItem('fitbuddyai_no_auto_restore'); } catch {}
   try { localStorage.removeItem('fitbuddyai_no_auto_restore'); } catch {}
-  try { const { clearUserData } = require('./localStorage'); clearUserData(); } catch {}
+  try { clearUserData(); } catch {}
   try { sessionStorage.removeItem('fitbuddyaiUsername'); } catch {}
-  // If using Supabase client, call signOut to clear its internal session
   try {
     if (supabase && typeof supabase.auth?.signOut === 'function') {
-      supabase.auth.signOut().catch(() => {});
+      await supabase.auth.signOut().catch(() => {});
     }
-  } catch (e) {}
+  } catch {
+    // ignore
+  }
+}
+
+export function signOut(): void {
+  void signOutAndRevoke().catch((e) => console.warn('[authService] signOut error', e));
 }

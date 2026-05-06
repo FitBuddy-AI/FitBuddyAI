@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './SignUpPage.css';
-import { signUp } from '../services/authService';
+import { getPasswordPolicyError, signUp } from '../services/authService';
 import GoogleIdentityButton from './GoogleIdentityButton';
 
 const SignUpPage: React.FC = () => {
@@ -16,16 +16,23 @@ const SignUpPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    const useSupabase = Boolean(import.meta.env.VITE_LOCAL_USE_SUPABASE || import.meta.env.VITE_SUPABASE_URL);
     if (password !== confirmPassword) {
       setError('Passwords do not match');
       return;
+    }
+    if (useSupabase) {
+      const passwordPolicyError = getPasswordPolicyError(password);
+      if (passwordPolicyError) {
+        setError(passwordPolicyError);
+        return;
+      }
     }
     setLoading(true);
     try {
       const normalizedEmail = String(email).trim().toLowerCase();
       const dataUser = await signUp(normalizedEmail, username, password);
       if (dataUser && (dataUser as any).id) {
-        try { sessionStorage.setItem('fitbuddyaiUsername', (dataUser as any).username); } catch {}
         // Post-signup redirect to profile; additional restore/backup logic lives elsewhere
         navigate('/profile');
       } else {

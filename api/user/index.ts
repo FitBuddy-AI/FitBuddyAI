@@ -67,7 +67,7 @@ export default async function handler(req: any, res: any) {
             // fallback: try to update metadata for current session (may be no-op on server)
             try {
               await (supabase.auth as any).updateUser({ data: { display_name: safe.username, username: safe.username } });
-            } catch (e) {
+            } catch (_e) {
               // ignore fallback errors
             }
           } else {

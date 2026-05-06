@@ -205,7 +205,7 @@ const BackgroundDots: React.FC = () => {
     draw(true);
     if (animate) toggleAnimation();
 
-    let initialRaf: number | null = requestAnimationFrame(() => {
+    const initialRaf: number | null = requestAnimationFrame(() => {
       refreshCanvas();
     });
 

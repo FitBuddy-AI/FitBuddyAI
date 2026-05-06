@@ -6,9 +6,11 @@ type Theme = 'theme-light' | 'theme-dark';
 interface SettingsPageProps {
   theme: Theme;
   onToggleTheme: () => void;
+  homeIntroEnabled: boolean;
+  onToggleHomeIntro: () => void;
 }
 
-const SettingsPage: React.FC<SettingsPageProps> = ({ theme, onToggleTheme }) => {
+const SettingsPage: React.FC<SettingsPageProps> = ({ theme, onToggleTheme, homeIntroEnabled, onToggleHomeIntro }) => {
   const isDark = theme === 'theme-dark';
   return (
     <div className="settings-page">
@@ -26,6 +28,16 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ theme, onToggleTheme }) => 
             </div>
             <button className="toggle-btn" onClick={onToggleTheme}>
               {isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            </button>
+          </div>
+
+          <div className="settings-row">
+            <div>
+              <h3>Home intro animation</h3>
+              <p className="setting-help">Play the new particle-heavy intro when you open the home page.</p>
+            </div>
+            <button className="toggle-btn" onClick={onToggleHomeIntro}>
+              {homeIntroEnabled ? 'Disable Intro' : 'Enable Intro'}
             </button>
           </div>
         </div>

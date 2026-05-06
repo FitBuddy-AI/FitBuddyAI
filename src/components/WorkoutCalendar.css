@@ -463,6 +463,17 @@ body:not(.theme-dark) .calendar-nav .nav-button:hover svg {
   letter-spacing: 0.5px;
 }
 
+.day-header-full,
+.day-header-short {
+  display: inline-block;
+  line-height: 1.1;
+  max-width: 100%;
+}
+
+.day-header-short {
+  display: none;
+}
+
 .calendar-day {
   background: white;
   min-height: var(--calendar-day-height);
@@ -1225,6 +1236,7 @@ body.theme-dark .hero-card {
   border: 1px solid rgba(15, 23, 42, 0.12);
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 20px 55px rgba(15, 23, 42, 0.12);
+  -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
 }
 
@@ -2199,5 +2211,208 @@ body.theme-dark .legend-item {
   .workout-indicator {
     padding: 8px 4px;
     font-size: 10px;
+  }
+}
+
+@media (max-width: 768px) {
+  .calendar-page {
+    padding: 12px 10px 18px;
+  }
+
+  .calendar-container {
+    padding: 0;
+  }
+
+  .calendar-header {
+    margin-bottom: 18px;
+    gap: 14px;
+  }
+
+  .calendar-header .user-info {
+    width: 100%;
+  }
+
+  .user-info h1 {
+    font-size: clamp(1.5rem, 5vw, 2rem);
+    line-height: 1.1;
+  }
+
+  .user-info p {
+    max-width: none;
+    font-size: 0.95rem;
+  }
+
+  .hero-card {
+    padding: 14px 16px;
+  }
+
+  .progress-stats {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    width: 100%;
+  }
+
+  .stat-card {
+    width: 100%;
+    padding: 14px;
+    gap: 10px;
+  }
+
+  .stat-number {
+    font-size: 20px;
+  }
+
+  .progress-circle {
+    width: 56px;
+    height: 56px;
+  }
+
+  .calendar-nav {
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .month-year {
+    min-width: 0;
+    font-size: clamp(1.1rem, 4.5vw, 1.5rem);
+  }
+
+  .calendar-layout {
+    grid-template-columns: 1fr !important;
+    gap: 14px;
+  }
+
+  .calendar-main,
+  .calendar-legend {
+    width: 100%;
+  }
+
+  .calendar-legend {
+    position: static;
+    top: auto;
+    margin-top: 12px;
+    padding: 18px;
+  }
+
+  .legend-items {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .legend-item {
+    width: 100%;
+    white-space: normal;
+  }
+
+  .calendar-grid {
+    gap: 1px;
+    padding: 12px 10px;
+    border-radius: 24px;
+  }
+
+  .day-header {
+    padding: 8px 4px;
+    min-height: 44px;
+    font-size: 11px;
+    letter-spacing: 0.3px;
+  }
+
+  .calendar-day {
+    min-height: 68px;
+    padding: 6px;
+    border-radius: 16px;
+  }
+
+  .day-number {
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+
+  .workout-content {
+    min-height: 0;
+    padding: 0;
+  }
+
+  .workout-indicator {
+    padding: 8px 6px;
+    font-size: 10px;
+  }
+
+  .workout-duration {
+    font-size: 10px;
+  }
+
+  .edit-fab {
+    bottom: 14px;
+    right: 14px;
+    width: 48px;
+    height: 48px;
+  }
+
+  .edit-menu {
+    width: 100vw;
+    right: -100vw;
+  }
+
+  .edit-menu.open {
+    right: 0;
+  }
+
+  .edit-menu-header,
+  .edit-menu-content {
+    padding: 18px 16px;
+  }
+
+  .edit-actions,
+  .delete-action-row,
+  .move-group-actions,
+  .date-picker-actions,
+  .batch-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .edit-action-btn,
+  .move-btn,
+  .add-workout-btn,
+  .cancel-btn,
+  .save-btn,
+  .date-picker-actions button,
+  .batch-add-panel .save-btn,
+  .edit-menu .clear-calendar-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .workout-edit-form select,
+  .batch-add-panel textarea,
+  .date-input {
+    width: 100%;
+  }
+
+  .edit-menu-popup-root .workout-popup {
+    position: static;
+    right: auto;
+    top: auto;
+    width: 100%;
+  }
+
+  .calendar-day.drag-over::after,
+  .calendar-day.has-workout.drag-over::after,
+  .calendar-day:not(.has-workout).drag-over::after {
+    max-width: calc(100% - 12px);
+    font-size: 0.62rem;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .day-header-full {
+    display: none;
+  }
+
+  .day-header-short {
+    display: inline-block;
   }
 }

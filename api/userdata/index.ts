@@ -15,7 +15,7 @@ function applyCors(req: any, res: any) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Debug-Userdata, x-debug-userdata');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  } catch (e) {
+  } catch (_e) {
     // ignore header errors
   }
   if (req.method === 'OPTIONS') {
@@ -88,7 +88,7 @@ export default async function handler(req: any, res: any) {
       try {
           // Ensure chat_history is stored as an array if provided as JSON string
           if (sanitizedPayload && typeof sanitizedPayload.chat_history === 'string') {
-            try { sanitizedPayload.chat_history = JSON.parse(sanitizedPayload.chat_history); } catch (e) { /* keep raw string if parse fails */ }
+            try { sanitizedPayload.chat_history = JSON.parse(sanitizedPayload.chat_history); } catch (_e) { /* keep raw string if parse fails */ }
           }
         // Build a row that includes both payload and explicit columns (if present)
         // Ensure chat_history is stored only in the explicit `chat_history` column and not inside payload
@@ -119,25 +119,41 @@ export default async function handler(req: any, res: any) {
           ? (userPayload.data || userPayload)
           : null;
         const usernameFromPayload = (payloadToWrite && payloadToWrite.username) || (maybeUser && (maybeUser.username || maybeUser.name)) || null;
-        const avatarFromPayload = (payloadToWrite && payloadToWrite.avatar) || (maybeUser && (maybeUser.avatar || maybeUser.avatar_url || maybeUser.photoUrl)) || null;
+        const avatarFromPayload = (payloadToWrite && (payloadToWrite.avatar_url || payloadToWrite.avatar)) || (maybeUser && (maybeUser.avatar_url || maybeUser.avatar || maybeUser.photoUrl)) || null;
+        const energyFromPayload = (payloadToWrite && Object.prototype.hasOwnProperty.call(payloadToWrite, 'energy')) ? payloadToWrite.energy : (maybeUser && Object.prototype.hasOwnProperty.call(maybeUser, 'energy') ? maybeUser.energy : null);
+        const inventoryFromPayload = (payloadToWrite && Object.prototype.hasOwnProperty.call(payloadToWrite, 'inventory')) ? payloadToWrite.inventory : (maybeUser && Object.prototype.hasOwnProperty.call(maybeUser, 'inventory') ? maybeUser.inventory : null);
+        const streakFromPayload = (payloadToWrite && Object.prototype.hasOwnProperty.call(payloadToWrite, 'streak')) ? payloadToWrite.streak : (maybeUser && Object.prototype.hasOwnProperty.call(maybeUser, 'streak') ? maybeUser.streak : null);
         if (usernameFromPayload) {
           upsertRow.username = usernameFromPayload;
           delete payloadToWrite.username;
         }
         if (avatarFromPayload) {
-          upsertRow.avatar = avatarFromPayload;
+          upsertRow.avatar_url = avatarFromPayload;
+          delete payloadToWrite.avatar_url;
           delete payloadToWrite.avatar;
+        }
+        if (Object.prototype.hasOwnProperty.call(payloadToWrite, 'energy') || (maybeUser && Object.prototype.hasOwnProperty.call(maybeUser, 'energy'))) {
+          upsertRow.energy = energyFromPayload;
+          delete payloadToWrite.energy;
+        }
+        if (Array.isArray(inventoryFromPayload)) {
+          upsertRow.inventory = inventoryFromPayload;
+          delete payloadToWrite.inventory;
+        }
+        if (Object.prototype.hasOwnProperty.call(payloadToWrite, 'streak') || (maybeUser && Object.prototype.hasOwnProperty.call(maybeUser, 'streak'))) {
+          upsertRow.streak = streakFromPayload;
+          delete payloadToWrite.streak;
         }
         // Do not attempt to write an 'assessment_data' column (not present in current schema)
         // Warn if there are other arbitrary payload keys (we are intentionally not storing them)
-        const allowedKeys = new Set(['questionnaire_progress','workout_plan','accepted_terms','accepted_privacy','chat_history','username','avatar','fitbuddyai_user_data','user','user_data']);
+        const allowedKeys = new Set(['questionnaire_progress','workout_plan','accepted_terms','accepted_privacy','chat_history','username','avatar','avatar_url','energy','inventory','streak','fitbuddyai_user_data','user','user_data']);
         const extraKeys = Object.keys(payloadToWrite || {}).filter(k => !allowedKeys.has(k));
         if (extraKeys.length) console.warn('[api/userdata] ignoring extra payload keys (not stored to DB):', extraKeys);
         console.log('[api/userdata] upsertRow keys:', Object.keys(upsertRow));
         console.log('[api/userdata] upsertRow preview:', JSON.stringify(upsertRow, null, 2));
         // Debug shortcut: if caller sets x-debug-userdata header, return the computed upsertRow without writing
         if (String(req.headers['x-debug-userdata'] || '') === '1') {
-          try { res.setHeader('x-userdata-source', 'debug'); } catch (e) {}
+          try { res.setHeader('x-userdata-source', 'debug'); } catch (_e) {}
           return res.status(200).json({ ok: true, debugUpsertRow: upsertRow });
         }
         const { error } = await supabase.from('fitbuddyai_userdata').upsert(upsertRow, { onConflict: 'user_id' });
@@ -145,7 +161,7 @@ export default async function handler(req: any, res: any) {
           console.error('[api/userdata] supabase upsert error:', error);
           return res.status(500).json({ error: error.message || 'Upsert failed' });
         }
-          try { res.setHeader('x-userdata-source', 'supabase'); } catch (e) {}
+          try { res.setHeader('x-userdata-source', 'supabase'); } catch (_e) {}
         // Return a client-friendly payload using canonical keys only
         const clientPayload: any = {};
         clientPayload.questionnaire_progress = upsertRow.questionnaire_progress;
@@ -194,7 +210,7 @@ export default async function handler(req: any, res: any) {
               } catch {}
               if (ok) diag.verifiedViaSupabaseToken = true;
             }
-          } catch (e) {}
+          } catch (_e) {}
         }
         if (!ok) {
           try {
@@ -204,7 +220,7 @@ export default async function handler(req: any, res: any) {
               if (payload && payload.role === 'admin') ok = true;
               if (ok) diag.verifiedViaJWT = true;
             }
-          } catch (e) {}
+          } catch (_e) {}
         }
         if (!ok) {
           try {
@@ -254,7 +270,7 @@ export default async function handler(req: any, res: any) {
               }
               if (ok) diag.verifiedViaClientUser = true;
             }
-          } catch (e) {}
+          } catch (_e) {}
         }
         // If not an admin, allow the call only if the provided token belongs to the same userId being requested
         if (!ok) {
@@ -269,7 +285,7 @@ export default async function handler(req: any, res: any) {
                   if (tokenUid && body.userId && String(tokenUid) === String(body.userId)) {
                     allowSelf = true;
                   }
-                } catch (e) {}
+                } catch (_e) {}
               }
               // Fallback to local JWT verification
               if (!allowSelf) {
@@ -282,10 +298,10 @@ export default async function handler(req: any, res: any) {
                       allowSelf = true;
                     }
                   }
-                } catch (e) {}
+                } catch (_e) {}
               }
             }
-          } catch (e) {}
+          } catch (_e) {}
         }
         if (!ok && !allowSelf) return res.status(403).json({ error: 'Forbidden', diag });
       }
@@ -298,7 +314,7 @@ export default async function handler(req: any, res: any) {
         const rawAuth = String(req.headers.authorization || req.headers.Authorization || '') || '';
         const masked = rawAuth ? (rawAuth.slice(0, 8) + '...[masked]') : '(none)';
         console.log('[api/userdata] admin request diag:', { userId, maskedAuth: masked, ...diag });
-      } catch (e) {}
+      } catch (_e) {}
       if (!userId) return res.status(400).json({ error: 'userId required' });
       const hasFitbuddyFields = (body && (
         body.workout_plan !== undefined ||
@@ -344,7 +360,7 @@ export default async function handler(req: any, res: any) {
             delete payloadToWriteAdmin.accepted_privacy;
           }
           if (payloadToWriteAdmin && Object.prototype.hasOwnProperty.call(payloadToWriteAdmin, 'chat_history')) {
-            try { upsertRow.chat_history = typeof payloadToWriteAdmin.chat_history === 'string' ? JSON.parse(payloadToWriteAdmin.chat_history) : payloadToWriteAdmin.chat_history; } catch (e) { upsertRow.chat_history = payloadToWriteAdmin.chat_history; }
+            try { upsertRow.chat_history = typeof payloadToWriteAdmin.chat_history === 'string' ? JSON.parse(payloadToWriteAdmin.chat_history) : payloadToWriteAdmin.chat_history; } catch (_e) { upsertRow.chat_history = payloadToWriteAdmin.chat_history; }
             delete payloadToWriteAdmin.chat_history;
           }
           // Store explicit fields rather than writing a payload column
@@ -379,7 +395,7 @@ export default async function handler(req: any, res: any) {
           if (error) {
             console.error('[api/userdata] admin fetch error:', error);
           } else {
-            try { console.log('[api/userdata] admin fetch result (cols):', data); } catch (e) {}
+            try { console.log('[api/userdata] admin fetch result (cols):', data); } catch (_e) {}
             // No `payload` column selected here — prefer explicit columns only
             const cols = { accepted_terms: data?.accepted_terms ?? null, accepted_privacy: data?.accepted_privacy ?? null, chat_history: data?.chat_history ?? null };
             if (cols.accepted_terms !== null || cols.accepted_privacy !== null || cols.chat_history !== null) {
@@ -402,7 +418,7 @@ export default async function handler(req: any, res: any) {
   if (!resultPayload) console.log('[api/userdata] admin fetch returned empty payload for userId:', userId);
   // Indicate source for client diagnostics
   const source = resultPayload ? (dbClient ? 'supabase' : 'filesystem') : 'none';
-  try { res.setHeader('x-userdata-source', source); } catch (e) {}
+  try { res.setHeader('x-userdata-source', source); } catch (_e) {}
   return res.status(200).json({ payload: resultPayload });
     }
 
@@ -439,7 +455,7 @@ export default async function handler(req: any, res: any) {
           try {
             const { data: pubRow } = await supabase.from('public.users').select('id, email, raw_user_meta_data, user_metadata, created_at').eq('id', uid).limit(1).maybeSingle();
             if (pubRow) profile = pubRow;
-          } catch (e) {}
+          } catch (_e) {}
         }
 
         // Fetch stored payload from user_data table
@@ -487,16 +503,16 @@ export default async function handler(req: any, res: any) {
             if (payload.questionnaire_progress !== undefined) payload.fitbuddyai_questionnaire_progress = payload.questionnaire_progress;
             if (payload.assessment_data !== undefined) payload.fitbuddyai_assessment_data = payload.assessment_data;
             // New fields: normalize terms acceptance and chat history
-            try { payload.accepted_terms = normalizeVal(payload.accepted_terms); } catch (e) {}
-            try { payload.accepted_privacy = normalizeVal(payload.accepted_privacy); } catch (e) {}
+            try { payload.accepted_terms = normalizeVal(payload.accepted_terms); } catch (_e) {}
+            try { payload.accepted_privacy = normalizeVal(payload.accepted_privacy); } catch (_e) {}
             try {
               let ch = normalizeVal(payload.chat_history);
               // Ensure chat_history is an array if present
               if (ch && typeof ch === 'string') {
-                try { ch = JSON.parse(ch); } catch (e) {}
+                try { ch = JSON.parse(ch); } catch (_e) {}
               }
               payload.chat_history = Array.isArray(ch) ? ch : (ch ? [ch] : null);
-            } catch (e) {}
+            } catch (_e) {}
           } catch (e) {
             console.warn('[api/userdata] payload normalization failed', e);
           }
@@ -504,7 +520,7 @@ export default async function handler(req: any, res: any) {
 
   // Remove explicit null keys before returning so clients don't receive null fields
   const returnPayload = payload && typeof payload === 'object' ? sanitizePayload(payload) : payload;
-  try { res.setHeader('x-userdata-source', 'supabase'); } catch (e) {}
+  try { res.setHeader('x-userdata-source', 'supabase'); } catch (_e) {}
   return res.status(200).json({ ok: true, profile, payload: returnPayload, stored: returnPayload });
       } catch (e: any) {
         console.error('[api/userdata] signin unexpected error:', e);
@@ -527,13 +543,13 @@ export default async function handler(req: any, res: any) {
           console.error('[api/userdata] load fetch error:', error);
           return res.status(500).json({ error: error.message || 'Fetch failed' });
         }
-        try { res.setHeader('x-userdata-source', 'supabase'); } catch (e) {}
+        try { res.setHeader('x-userdata-source', 'supabase'); } catch (_e) {}
         // No payload column selected here — use explicit columns only
         const storedCols: any = { questionnaire_progress: data?.questionnaire_progress ?? null, workout_plan: data?.workout_plan ?? null, accepted_terms: data?.accepted_terms ?? null, accepted_privacy: data?.accepted_privacy ?? null, chat_history: data?.chat_history ?? null, username: data?.username ?? null, avatar: data?.avatar ?? null };
         const normalizeVal = (v: any) => {
           if (v === null || v === undefined) return null;
           if (typeof v === 'string') {
-            try { return JSON.parse(v); } catch (e) { return v; }
+            try { return JSON.parse(v); } catch (_e) { return v; }
           }
           if (v && typeof v === 'object' && Object.prototype.hasOwnProperty.call(v, 'data')) return v.data ?? null;
           return v;
@@ -547,7 +563,7 @@ export default async function handler(req: any, res: any) {
           const chRaw = storedCols.chat_history !== null && storedCols.chat_history !== undefined ? storedCols.chat_history : null;
           let ch = chRaw;
           if (ch && typeof ch === 'string') {
-            try { ch = JSON.parse(ch); } catch (e) {}
+            try { ch = JSON.parse(ch); } catch (_e) {}
           }
           storedNorm = sanitizePayload({ questionnaire_progress: qp, workout_plan: wp, accepted_terms: storedCols.accepted_terms ?? null, accepted_privacy: storedCols.accepted_privacy ?? null, chat_history: Array.isArray(ch) ? ch : (ch ? [ch] : null), username: storedCols.username ?? null, avatar: storedCols.avatar ?? null }) || null;
         } else {

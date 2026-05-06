@@ -1,12 +1,115 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import './GeminiChatPage.css';
 import { getAITextResponse } from '../services/aiService';
 import BackgroundDots from './BackgroundDots';
 // ActionConfirmModal removed: actions are applied automatically
 
 const ASSISTANT_GREETING = 'Hi! I am AI Coach — your AI Fitness assistant powered by Google Gemini. I can answer questions about your workouts, goals, and progress.';
-const MAX_PLAN_SNIPPET_CHARS = 500; // keep prompt small to return responses faster
+const normalizeChatText = (text: string) => {
+  if (/currently under development/i.test(String(text))) {
+    return 'AI Coach is running in demo mode right now. Configure GEMINI_API_KEY for full production responses, or ask for workout ideas, recovery tips, or a beginner-friendly routine.';
+  }
+  return text;
+};
+const MAX_PLAN_SNIPPET_CHARS = 10000; // allow richer workoutPlan context for chat personalization
 const MAX_HISTORY_MESSAGES = 12; // limit context length to speed up LLM responses
+
+const isInternalChatLink = (href: string) => href.startsWith('/') && !href.startsWith('//') && !href.includes('\\');
+
+const isSafeExternalChatHref = (href: string) => {
+  try {
+    const parsed = new URL(href);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+const isSafeChatHref = (href: string) => isInternalChatLink(href) || isSafeExternalChatHref(href);
+
+const trimTrailingPunctuation = (value: string) => {
+  let end = value.length;
+  while (end > 0 && '.,!?;:)]}'.includes(value[end - 1])) {
+    end -= 1;
+  }
+  return value.slice(0, end);
+};
+
+const sanitizeChatFragment = (value: string) => String(value).replace(/[<>]/g, '');
+
+const renderTextFragment = (value: string, key: string) => <span key={key}>{sanitizeChatFragment(value)}</span>;
+
+const renderChatText = (text: string) => {
+  const output: Array<React.ReactNode> = [];
+  const source = String(text || '');
+  const tokenRegex = /(\[([^\]]+)\]\(([^)]+)\))|(https?:\/\/[^\s<>()]+|\/(?!\/)[^\s<>()]+)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenRegex.exec(source)) !== null) {
+    if (match.index > lastIndex) {
+      output.push(renderTextFragment(source.slice(lastIndex, match.index), `chat-text-${output.length}`));
+    }
+
+    // match[1]: full markdown link [text](href)
+    // match[2]: link text (inside [...])
+    // match[3]: link href (inside (...))
+    // match[4]: plain URL (http://... or /...)
+    const markdownText = match[2];
+    const markdownHref = match[3];
+    const rawHref = match[4];
+
+    let href = '';
+    let displayText = '';
+
+    if (markdownHref) {
+      // Markdown link: [text](href) — validate href before creating link
+      href = markdownHref;
+      displayText = markdownText;
+    } else if (rawHref) {
+      // Plain URL: http://... or /... — strip trailing punctuation
+      href = trimTrailingPunctuation(rawHref);
+      displayText = href;
+    }
+
+    const key = `chat-link-${output.length}`;
+
+    if (href && isSafeChatHref(href)) {
+      // Safe href: create a clickable link
+      output.push(
+        isInternalChatLink(href) ? (
+          <Link key={key} to={href} className="msg-link">
+            {displayText}
+          </Link>
+        ) : (
+          <a key={key} href={href} target="_blank" rel="noopener noreferrer" className="msg-link">
+            {displayText}
+          </a>
+        )
+      );
+    } else if (href) {
+      // Unsafe href: output link text only (don't make it clickable)
+      output.push(renderTextFragment(displayText, `${key}-text`));
+    }
+
+    // Handle trailing punctuation for plain URLs only
+    if (rawHref && displayText !== rawHref) {
+      const trailing = rawHref.slice(displayText.length);
+      if (trailing) {
+        output.push(renderTextFragment(trailing, `${key}-trailing`));
+      }
+    }
+
+    lastIndex = tokenRegex.lastIndex;
+  }
+
+  if (lastIndex < source.length) {
+    output.push(renderTextFragment(source.slice(lastIndex), `chat-text-${output.length}`));
+  }
+
+  return output.length ? output : source;
+};
 
 // Static example prompt to avoid re-allocating large strings on every send
 const EXAMPLE_PROMPT = (() => {
@@ -220,6 +323,14 @@ const GeminiChatPage: React.FC<GeminiChatPageProps> = ({ userData }) => {
   const isRestoringRef = useRef(false);
 
   useEffect(() => {
+    setMessages(current => {
+      const normalized = current.map(message => {
+        const text = normalizeChatText(message.text);
+        return text === message.text ? message : { ...message, text };
+      });
+      const changed = normalized.some((message, index) => message !== current[index]);
+      return changed ? normalized : current;
+    });
     // Scroll to bottom when messages change
     if (listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
@@ -235,7 +346,7 @@ const GeminiChatPage: React.FC<GeminiChatPageProps> = ({ userData }) => {
           const raw = sessionStorage.getItem(`fitbuddyai_chat_${uid}`);
         if (!raw) return;
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length) setMessages(parsed);
+          if (Array.isArray(parsed) && parsed.length) setMessages(parsed.map((message: any) => ({ ...message, text: normalizeChatText(message.text) })));
       } catch (err) {
         // ignore
       }
@@ -256,7 +367,7 @@ const GeminiChatPage: React.FC<GeminiChatPageProps> = ({ userData }) => {
         if (!raw) return;
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length) setMessages(parsed);
-      } catch (e) {
+      } catch (_e) {
         isRestoringRef.current = false;
         // ignore restore errors
       }
@@ -279,7 +390,7 @@ const GeminiChatPage: React.FC<GeminiChatPageProps> = ({ userData }) => {
         if (!raw) return;
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length) setMessages(parsed);
-      } catch (e) {
+      } catch (_e) {
         isRestoringRef.current = false;
         // ignore restore errors
       }
@@ -298,7 +409,7 @@ const GeminiChatPage: React.FC<GeminiChatPageProps> = ({ userData }) => {
         if (!raw) return;
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length) setMessages(parsed);
-      } catch (e) {}
+      } catch (_e) {}
     };
     window.addEventListener('fitbuddyai-open-chat', onOpen as EventListener);
     return () => window.removeEventListener('fitbuddyai-login', onLogin);
@@ -392,15 +503,11 @@ const GeminiChatPage: React.FC<GeminiChatPageProps> = ({ userData }) => {
   const summarizeUser = (u: any) => {
     if (!u) return 'No user data available.';
     try {
-      const safe = {
-        id: u.id,
-        username: u.username,
-        age: u.age,
-        goals: u.goals || u.preferences || [],
-        fitnessLevel: u.fitnessLevel || u.fitness_level || 'unknown',
-        energy: u.energy ?? null,
-        streak: u.streak ?? null
-      };
+      const sensitiveKey = /(token|access_token|refresh_token|jwt|password|secret|authorization|cookie)/i;
+      const safe = JSON.parse(JSON.stringify(u, (key, value) => {
+        if (sensitiveKey.test(String(key))) return undefined;
+        return value;
+      }));
       return JSON.stringify(safe);
     } catch {
       return 'User data present but could not be summarized.';
@@ -445,7 +552,7 @@ const GeminiChatPage: React.FC<GeminiChatPageProps> = ({ userData }) => {
       // Collapse multiple blank lines
       t = t.replace(/\n{3,}/g, '\n\n');
       return t.trim();
-    } catch (e) {
+    } catch (_e) {
       return text;
     }
   };
@@ -467,7 +574,7 @@ const GeminiChatPage: React.FC<GeminiChatPageProps> = ({ userData }) => {
   const { getAuthToken, loadUserData } = await import('../services/localStorage');
   const parsed = loadUserData() || null;
   const userId = parsed?.id || parsed?.data?.id || userData?.id;
-  let token = getAuthToken() || parsed?.token || parsed?.data?.token || userData?.token || parsed?.jwt || parsed?.data?.jwt || parsed?.access_token || parsed?.data?.access_token;
+  const token = getAuthToken() || parsed?.token || parsed?.data?.token || userData?.token || parsed?.jwt || parsed?.data?.jwt || parsed?.access_token || parsed?.data?.access_token;
 
       if (!userId || userId === 'anon') {
         // No signed-in user: preserve anon chat and redirect to signin
@@ -531,7 +638,7 @@ const GeminiChatPage: React.FC<GeminiChatPageProps> = ({ userData }) => {
       const { appendChatMessage } = await import('../services/localStorage');
       const uid = userData?.id;
       appendChatMessage({ role: 'user', text, ts: Date.now() }, { userId: uid });
-    } catch (e) { /* ignore */ }
+    } catch (_e) { /* ignore */ }
 
   // Build prompt including a short user-data summary and recent conversation
   const recent = messages.concat(newUserMsg);
@@ -692,7 +799,7 @@ const GeminiChatPage: React.FC<GeminiChatPageProps> = ({ userData }) => {
                     )}
                   </div>
                 )}
-                <div className="msg-text">{m.text}</div>
+                <div className="msg-text">{renderChatText(m.text)}</div>
               </div>
             );
           })}

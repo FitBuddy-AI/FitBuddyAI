@@ -23,7 +23,7 @@ function sanitize() {
       if (u && u.workoutPlan && Array.isArray(u.workoutPlan.dailyWorkouts)) {
         const before = u.workoutPlan.dailyWorkouts.length;
         // remove falsy entries
-        let cleaned = u.workoutPlan.dailyWorkouts.filter(Boolean);
+        const cleaned = u.workoutPlan.dailyWorkouts.filter(Boolean);
         // dedupe by date (keep last occurrence)
         const seen = new Map();
         for (const d of cleaned) {

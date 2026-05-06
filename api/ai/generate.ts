@@ -7,8 +7,8 @@ let supabase: any = null;
 if (SUPABASE_URL && SUPABASE_KEY) {
   try {
     supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-  } catch (e) {
-    console.warn('[api/ai/generate] failed to create supabase client', String(e));
+  } catch (_e) {
+    console.warn('[api/ai/generate] failed to create supabase client', String(_e));
     supabase = null;
   }
 }
@@ -19,7 +19,7 @@ const GEMINI_API_KEY = (process.env.GEMINI_API_KEY ||
   process.env.VITE_GEMINI_API_KEY ||
   process.env.NEXT_PUBLIC_GEMINI_API_KEY) as string | undefined;
 const GEMINI_URL = GEMINI_API_KEY
-  ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`
+  ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`
   : null;
 
 // Lightweight CORS helper so static builds and alternate origins can call this function
@@ -28,7 +28,7 @@ function applyCors(req: any, res: any) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Debug-Userdata, x-debug-userdata');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  } catch (e) {
+  } catch (_e) {
     // ignore header write errors
   }
   if (req.method === 'OPTIONS') {
@@ -54,7 +54,7 @@ export default async function handler(req: any, res: any) {
     if (typeof body === 'string') {
       try {
         body = JSON.parse(body);
-      } catch (e) {
+      } catch (_e) {
         // leave as string — we'll try other fallbacks below
       }
     }
@@ -73,7 +73,7 @@ export default async function handler(req: any, res: any) {
           })
           .filter(Boolean)
           .join('\n');
-      } catch (e) {
+      } catch (_e) {
         return '';
       }
     };
@@ -157,7 +157,7 @@ export default async function handler(req: any, res: any) {
           if (typeof node.text === 'string' && node.text.trim()) { prompt = node.text.trim(); break; }
           if (typeof node.prompt === 'string' && node.prompt.trim()) { prompt = node.prompt.trim(); break; }
           for (const k of Object.keys(node)) {
-            try { stack.push((node as any)[k]); } catch (e) { /* ignore */ }
+            try { stack.push((node as any)[k]); } catch (_e) { /* ignore */ }
           }
         }
       }

@@ -7,7 +7,6 @@ export async function backupUserDataToServer(userId: string) {
   const fitbuddyai_workout_plan = localStorage.getItem('fitbuddyai_workout_plan');
   const fitbuddyai_assessment_data = localStorage.getItem('fitbuddyai_assessment_data');
   const fitbuddyai_chat = sessionStorage.getItem(`fitbuddyai_chat_${userId}`) || localStorage.getItem(`fitbuddyai_chat_${userId}`);
-  const fitbuddyai_user_data = sessionStorage.getItem('fitbuddyai_user_data') || localStorage.getItem('fitbuddyai_user_data');
   if (!userId) return;
   try {
     // Only include keys that actually exist to avoid overwriting server data with nulls
@@ -15,9 +14,8 @@ export async function backupUserDataToServer(userId: string) {
   if (fitbuddyai_questionnaire_progress != null) payload.fitbuddyai_questionnaire_progress = fitbuddyai_questionnaire_progress;
   if (fitbuddyai_workout_plan != null) payload.fitbuddyai_workout_plan = fitbuddyai_workout_plan;
   if (fitbuddyai_assessment_data != null) payload.fitbuddyai_assessment_data = fitbuddyai_assessment_data;
-  // include chat history and user data if present so server can persist chat_history into payload
+  // include chat history and the user snapshot if present so the server can associate the backup correctly
   if (fitbuddyai_chat != null) payload.chat_history = fitbuddyai_chat;
-  if (fitbuddyai_user_data != null) payload.fitbuddyai_user_data = fitbuddyai_user_data;
 
     // Attach local fitbuddyai_user_data so server can cross-check client identity when needed
     try {
@@ -175,7 +173,7 @@ export async function restoreUserDataFromServer(userId: string) {
         // ignore
       }
     }
-  } catch (e) {}
+  } catch (_e) {}
     // If server returned a streak field, merge it into stored user payload and notify the app
     try {
       if (typeof payload.streak !== 'undefined') {
@@ -188,9 +186,9 @@ export async function restoreUserDataFromServer(userId: string) {
           try { sessionStorage.setItem('fitbuddyai_user_data', JSON.stringify(wrapper)); } catch {}
           try { localStorage.setItem('fitbuddyai_user_data', JSON.stringify(wrapper)); } catch {}
           try { window.dispatchEvent(new CustomEvent('fitbuddyai-user-updated', { detail: merged })); } catch {}
-        } catch (e) {}
+        } catch (_e) {}
       }
-    } catch (e) {}
+    } catch (_e) {}
     console.log('[cloudBackupService] restoreUserDataFromServer -> wrote keys from payload:', Object.keys(payload));
   } catch (err) {
     // Optionally log or handle error

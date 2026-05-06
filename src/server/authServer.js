@@ -10,7 +10,7 @@ leoProfanity.loadDictionary();
 
 import express from 'express';
 import userDataStoreRouter from './userDataStore.js';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import { v4 as uuidv4 } from 'uuid';
@@ -55,8 +55,8 @@ const adminUsersLimiter = rateLimit({
       if (auth === `Bearer ${adminToken}`) return `admin_token`;
     }
     
-    // Final fallback to IP
-    return req.ip || req.connection.remoteAddress || 'unknown';
+    // Final fallback to IP (use express-rate-limit helper for IPv6 compatibility)
+    return ipKeyGenerator(req);
   }
 });
 
@@ -142,6 +142,24 @@ const userUpdateLimiter = rateLimit({
   message: { error: 'Too many user updates, please try again later.' }
 });
 
+// Rate limiter for rickroll audit logging - protects the file-system write path from abuse
+const rickrollLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // limit each IP to 20 audit writes per windowMs
+  message: { error: 'Too many rickroll events, please try again later.' },
+  standardHeaders: 'draft-7',
+  legacyHeaders: false
+});
+
+// Rate limiter for local AI generation - protects the external AI call and audit logging
+const aiGenerateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30, // limit each IP to 30 AI requests per windowMs
+  message: { error: 'Too many AI requests, please try again later.' },
+  standardHeaders: 'draft-7',
+  legacyHeaders: false
+});
+
 // Rate limiter for user purchases - protects /api/user/buy endpoint for shop item purchases and energy transactions
 /**
  * Rate limiter for user purchases and shop transactions.
@@ -182,19 +200,20 @@ const userBuyLimiter = rateLimit({
     } catch (err) {
       // JWT verification failed, fall back to IP
     }
-    // Fallback to IP address
-    return req.ip || req.connection.remoteAddress || 'unknown';
+    // Fallback to IP address (use express-rate-limit helper for IPv6 compatibility)
+    return ipKeyGenerator(req);
   }
 });
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '1mb' }));
+app.use('/api/ai', bodyParser.json({ limit: '20mb' }));
 // Simple request logger to help debug routing issues in dev
 app.use((req, res, next) => {
   try {
     console.log(`[authServer] ${req.method} ${req.originalUrl || req.url}`);
-  } catch (e) {}
+  } catch (_e) {}
   next();
 });
 app.use(userDataStoreRouter);
@@ -208,6 +227,14 @@ function isAdminRequest(req) {
   if (!adminToken) return true; // no token configured -> allow (dev only)
   const auth = String(req.headers.authorization || req.headers.Authorization || '');
   return auth === `Bearer ${adminToken}`;
+}
+
+function getBearerToken(req) {
+  const auth = String(req.headers.authorization || req.headers.Authorization || '');
+  if (!auth) return null;
+  if (!auth.toLowerCase().startsWith('bearer ')) return null;
+  const token = auth.slice(7).trim();
+  return token || null;
 }
 
 app.get('/api/admin/users', adminUsersLimiter, async (req, res) => {
@@ -227,7 +254,7 @@ app.get('/api/admin/users', adminUsersLimiter, async (req, res) => {
 
     // Fallback to local users file
     const users = readUsers();
-    const safe = users.map(u => { const { password, ...rest } = u; return rest; });
+    const safe = users.map(u => { const { password: _password, ...rest } = u; return rest; });
     return res.json({ users: safe });
   } catch (err) {
     console.error('[authServer] /api/admin/users error', err);
@@ -392,7 +419,7 @@ app.get('/api/user/:id', async (req, res) => {
           return res.status(500).json({ message: 'Supabase error.' });
         }
         if (!data) return res.status(404).json({ message: 'User not found.' });
-        const { password, ...userSafe } = data || {};
+        const { password: _password, ...userSafe } = data || {};
         return res.status(200).json({ user: userSafe });
       } catch (e) {
         console.error('[authServer] /api/user/:id error', e);
@@ -406,23 +433,40 @@ app.get('/api/user/:id', async (req, res) => {
   }
 });
 
-app.post('/api/user/buy', userBuyLimiter, (req, res) => {
+app.post('/api/user/buy', userBuyLimiter, async (req, res) => {
   try {
-    const { id, item } = req.body;
+    const { id, item } = req.body || {};
     if (!id || !item) return res.status(400).json({ message: 'User ID and item required.' });
-    const users = readUsers();
-    const user = users.find(u => u.id === id);
-    if (!user) return res.status(404).json({ message: 'User not found.' });
-    if (typeof user.energy !== 'number' || user.energy < item.price) {
-      return res.status(400).json({ message: 'Not enough energy.' });
+    if (!supabase) return res.status(500).json({ message: 'Supabase not configured.' });
+
+    const token = getBearerToken(req);
+    if (!token) return res.status(401).json({ message: 'Missing Authorization token.' });
+
+    const { data: authData, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !authData?.user?.id) {
+      return res.status(401).json({ message: 'Invalid or expired token.' });
     }
-    user.energy -= item.price;
-    if (!Array.isArray(user.inventory)) user.inventory = [];
-    user.inventory.push(item);
-    writeUsers(users);
-    const { password, ...userSafe } = user;
-    res.json({ user: userSafe });
+    if (authData.user.id !== id) {
+      return res.status(403).json({ message: 'Token does not match user.' });
+    }
+
+    const { data: updatedUser, error: purchaseError } = await supabase.rpc('buy_shop_item_atomic', {
+      p_user_id: id,
+      p_item: item
+    });
+
+    if (purchaseError) {
+      console.error('[authServer] /api/user/buy rpc error', purchaseError);
+      if (String(purchaseError.message || '').toLowerCase().includes('insufficient energy')) {
+        return res.status(400).json({ message: 'Not enough energy.' });
+      }
+      return res.status(500).json({ message: 'Failed to save purchase.' });
+    }
+
+    const { password: _password, ...userSafe } = updatedUser || {};
+    return res.json({ user: userSafe });
   } catch (err) {
+    console.error('[authServer] /api/user/buy unexpected', err);
     res.status(500).json({ message: 'Server error.' });
   }
 });
@@ -449,9 +493,19 @@ app.post('/api/user/update', userUpdateLimiter, async (req, res) => {
         console.error('[authServer] update error', error);
         return res.status(500).json({ message: 'Failed to update user.' });
       }
-      if (!data) return res.status(404).json({ message: 'User not found.' });
+      if (!data) {
+        const seedRow = { user_id: id, ...updates };
+        const { data: upserted, error: upsertError } = await supabase.from('fitbuddyai_userdata').upsert(seedRow, { onConflict: 'user_id', returning: 'representation' }).select().limit(1).maybeSingle();
+        if (upsertError) {
+          console.error('[authServer] update fallback upsert error', upsertError);
+          return res.status(500).json({ message: 'Failed to update user.' });
+        }
+        if (!upserted) return res.status(404).json({ message: 'User not found.' });
+        const { password: _password, ...safeUpserted } = upserted || {};
+        return res.json({ user: safeUpserted });
+      }
 
-      const { password, ...safe } = data || {};
+      const { password: _password, ...safe } = data || {};
 
       // Attempt to update Supabase auth metadata (admin API when available)
       try {
@@ -460,7 +514,7 @@ app.post('/api/user/update', userUpdateLimiter, async (req, res) => {
         } else if (supabase && typeof (supabase.auth?.updateUser) === 'function') {
           try {
             await (supabase.auth).updateUser({ data: { display_name: safe.username, username: safe.username } });
-          } catch (e) {}
+          } catch (_e) {}
         } else {
           console.warn('[authServer] supabase auth admin update not available');
         }
@@ -631,11 +685,11 @@ app.post('/api/dev/apply-action', (req, res) => {
 });
 
 // Track rickroll events: client posts when a user is redirected to the rickroll.
-app.post('/api/rickroll', async (req, res) => {
+app.post('/api/rickroll', rickrollLimiter, async (req, res) => {
   try {
     const auth = String(req.headers.authorization || '');
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-    let providedUserId = req.body?.userId || null;
+    const providedUserId = req.body?.userId || null;
     let verified = false;
     let decodedId = null;
 
@@ -681,7 +735,7 @@ app.post('/api/rickroll', async (req, res) => {
 });
 
 // Local AI generation endpoint for dev server
-app.post('/api/ai/generate', async (req, res) => {
+app.post('/api/ai/generate', aiGenerateLimiter, async (req, res) => {
   try {
     // Be forgiving about incoming body shapes (prompt, contents, inputs, messages)
     let body = req.body || {};
@@ -741,7 +795,7 @@ app.post('/api/ai/generate', async (req, res) => {
     // Accept multiple env var names so deployments that used VITE_/NEXT_PUBLIC_ still work
     const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
     const GEMINI_URL = GEMINI_API_KEY
-      ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`
+      ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`
       : null;
 
     let generatedText = '';
@@ -749,67 +803,37 @@ app.post('/api/ai/generate', async (req, res) => {
       const allowMock = process.env.LOCAL_AI_MOCK === '1' || process.env.NODE_ENV !== 'production';
       if (!allowMock) return res.status(500).json({ message: 'AI provider not configured', diagnostic: { env_GEMINI_API_KEY_present: false } });
       console.warn('[authServer] GEMINI_API_KEY missing — returning local mock response (development)');
-      const today = new Date().toISOString().split('T')[0];
-      const mockPlan = {
-        id: `mock-${Date.now()}`,
-        name: 'Local Mock Plan',
-        description: 'This is a local mock workout plan used when GEMINI API key is not configured.',
-        startDate: today,
-        endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        totalDays: 7,
-        totalTime: '30 minutes',
-        weeklyStructure: ['Monday','Wednesday','Friday'],
-        dailyWorkouts: [
-          {
-            date: today,
-            type: 'strength',
-            completed: false,
-            totalTime: '30 minutes',
-            workouts: [
-              { name: 'Bodyweight Squats', difficulty: 'beginner', duration: '10 minutes', reps: 12, muscleGroups: ['legs'], equipment: [], description: 'Simple squats.' }
-            ],
-            alternativeWorkouts: []
-          }
-        ]
-      };
-      // For local dev, return a human-facing message indicating the
-      // feature is under development rather than a fabricated JSON plan.
-      generatedText = 'Sorry, this feature is currently under development.';
+      const lowerPrompt = String(prompt || '').toLowerCase();
+      if (lowerPrompt.includes('workout') || lowerPrompt.includes('plan') || lowerPrompt.includes('exercise')) {
+        generatedText = 'I can help you refine your workout plan in local demo mode. Connect GEMINI_API_KEY for full AI responses, or try asking for a warmup, a beginner-friendly routine, or a recovery suggestion.';
+      } else {
+        generatedText = 'I am running in local demo mode right now. Connect GEMINI_API_KEY for full AI responses, or ask me for workout ideas, recovery tips, or goal-based coaching.';
+      }
     } else {
       const response = await fetch(GEMINI_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
       });
-      const data = await response.json();
-      generatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    }
-
-    // If the AI returned an empty string unexpectedly, return a small
-    // deterministic fallback so clients (chat/planner) have valid JSON
-    // to parse and we fail more loudly in dev rather than returning silently
-    // empty text which is confusing in the UI.
-    try {
-      if (!generatedText || String(generatedText).trim().length === 0) {
-        console.warn('[authServer] generatedText empty — returning deterministic fallback plan');
-        const today2 = new Date().toISOString().split('T')[0];
-        const fallbackPlan = {
-          id: `fallback-${Date.now()}`,
-          name: 'Fallback Plan (empty AI response)',
-          description: 'Returned because the AI returned an empty result. Configure GEMINI_API_KEY or inspect server logs.',
-          startDate: today2,
-          endDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          totalDays: 1,
-          totalTime: '0 minutes',
-          weeklyStructure: [],
-          dailyWorkouts: [
-            { date: today2, type: 'rest', completed: false, totalTime: '0 minutes', workouts: [], alternativeWorkouts: [] }
-          ]
-        };
-                generatedText = 'Sorry, this feature is currently under development.';
+      const responseText = await response.text();
+      let data = null;
+      try {
+        data = responseText ? JSON.parse(responseText) : null;
+      } catch (_e) {
+        data = null;
       }
-    } catch (e) {
-      console.warn('[authServer] fallback generation failed', e);
+      if (!response.ok) {
+        const message = data?.error?.message || data?.message || `Gemini request failed with status ${response.status}`;
+        console.warn('[authServer] Gemini request failed', { status: response.status, message, body: responseText.slice(0, 500) });
+        generatedText = `AI Coach could not reach Gemini: ${message}`;
+      } else {
+        generatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (!generatedText || String(generatedText).trim().length === 0) {
+          const message = data?.promptFeedback?.blockReason ? `Blocked by Gemini safety filters (${data.promptFeedback.blockReason})` : 'Gemini returned an empty response';
+          console.warn('[authServer] Gemini response empty', { body: responseText.slice(0, 500) });
+          generatedText = `AI Coach could not produce a reply right now: ${message}`;
+        }
+      }
     }
 
     // Audit-log if supabase is configured
@@ -1076,7 +1100,7 @@ function processActionForUser(user, action, users, res) {
     } catch (sErr) { /* best-effort */ }
 
     writeUsers(users);
-    const { password, ...userSafe } = user;
+    const { password: _password, ...userSafe } = user;
     const resp = { user: userSafe, applied: action.summary || 'Applied updates.' };
     if (planDiffSummary) resp.planDiffSummary = planDiffSummary;
     return res.json(resp);
@@ -1088,7 +1112,9 @@ function processActionForUser(user, action, users, res) {
 
 app.post('/api/auth/signup', (req, res) => {
   try {
-    let { email, username, password } = req.body;
+    let { email } = req.body;
+    const username = req.body.username;
+    const password = req.body.password;
     if (!email || !username || !password) return res.status(400).json({ message: 'All fields are required.' });
     email = String(email).trim().toLowerCase();
     if (leoProfanity.check(username) || isUsernameBanned(username)) return res.status(400).json({ message: 'Username contains inappropriate or banned words.' });
@@ -1120,7 +1146,8 @@ app.post('/api/auth/signup', (req, res) => {
 
 app.post('/api/auth/signin', (req, res) => {
   try {
-    let { email, password } = req.body;
+    let { email } = req.body;
+    const password = req.body.password;
     if (!email || !password) return res.status(400).json({ message: 'Email and password required.' });
     email = String(email).trim().toLowerCase();
     const users = readUsers();
@@ -1174,7 +1201,7 @@ app.get('/api/users', adminUsersLimiter, (req, res) => {
   const admin = verifyAdminFromToken(req);
     if (!admin) return res.status(403).json({ message: 'Forbidden' });
     const users = readUsers();
-    const safe = users.map(u => { const { password, ...rest } = u; return rest; });
+    const safe = users.map(u => { const { password: _password, ...rest } = u; return rest; });
     return res.json({ users: safe });
   } catch (err) {
     return res.status(500).json({ message: 'Server error.' });

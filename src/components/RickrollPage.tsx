@@ -22,7 +22,7 @@ const RickrollPage: React.FC = () => {
       // report the event to server, then redirect
       const report = async () => {
         try {
-          let headers: any = { 'Content-Type': 'application/json' };
+          const headers: any = { 'Content-Type': 'application/json' };
           try {
             const { getAuthToken } = await import('../services/localStorage');
             const token = getAuthToken();

@@ -4,7 +4,8 @@
   flex-direction: column;
   background: transparent;
   position: relative;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: visible;
   z-index: 1;
 }
 
@@ -353,6 +354,45 @@
 
 /* Responsive Design */
 @media (max-width: 768px) {
+  .hero-section .logo.logo-centered {
+    display: inline-flex !important;
+    visibility: visible;
+    opacity: 1;
+    width: 96px;
+    height: 96px;
+    padding: 18px;
+    border-radius: 28px;
+    box-shadow: 0 14px 34px rgba(11, 183, 122, 0.3);
+  }
+
+  .hero-section .logo.logo-centered svg {
+    width: 52px;
+    height: 52px;
+  }
+
+  .hero-section {
+    min-height: max(560px, calc(100svh - 96px));
+    padding: 34px 14px 28px;
+    align-items: flex-start;
+  }
+
+  .hero-content {
+    position: relative;
+    top: auto;
+    left: auto;
+    transform: none;
+    max-width: 100%;
+    padding: 14px 8px;
+    margin: 0 auto;
+  }
+
+  .hero-content.centered-absolute {
+    position: relative;
+    top: auto;
+    left: auto;
+    transform: none;
+  }
+
   .app-title {
     font-size: 36px;
   }
@@ -389,5 +429,30 @@
   
   .final-cta-content h3 {
     font-size: 28px;
+  }
+
+  .cta-section .btn-large {
+    width: 100%;
+  }
+
+  .features-section,
+  .how-it-works-section,
+  .final-cta-section {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+}
+
+@media (max-width: 420px) {
+  .hero-section .logo.logo-centered {
+    width: 88px;
+    height: 88px;
+    padding: 16px;
+    border-radius: 24px;
+  }
+
+  .hero-section .logo.logo-centered svg {
+    width: 48px;
+    height: 48px;
   }
 }

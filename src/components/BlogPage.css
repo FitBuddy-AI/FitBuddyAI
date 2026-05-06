@@ -32,7 +32,10 @@
 .lead-dek{color:var(--text-medium);margin:0}
 .lead-text{max-width:760px}
 .story{column-count:2;column-gap:32px;font-size:15px;line-height:1.7;color:var(--text-dark)}
+.story-list{display:grid;gap:1rem}
+.story-card{display:grid;gap:0.5rem}
 .story p{margin:0 0 14px}
+.story-summary{margin:0}
 .encouragement{break-inside:avoid-column;margin-top:14px;padding:14px;background:linear-gradient(90deg, rgba(30,203,123,0.06), rgba(30,144,203,0.03));border-radius:10px;border:1px solid var(--border-light)}
 .encouragement p{margin:8px 0 0}
 .story-foot{column-span:all;margin-top:18px;display:flex;align-items:center;justify-content:space-between;gap:12px}

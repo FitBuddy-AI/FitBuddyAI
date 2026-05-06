@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Check, RotateCcw, Clock, Zap, Edit3, Trash2, ArrowRight, ArrowLeft, Save, Dumbbell } from 'lucide-react';
 import { DayWorkout, WorkoutType, Exercise } from '../types';
 import './WorkoutModal.css';
@@ -398,7 +399,7 @@ const WorkoutModal: React.FC<WorkoutModalProps> = ({
     });
   }, [primaryType, pickSuggestedExercises, workout]);
 
-  return (
+  const modal = (
     <div className="modal-overlay" onClick={onClose}>
       <div className="workout-modal" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
@@ -692,6 +693,10 @@ const WorkoutModal: React.FC<WorkoutModalProps> = ({
       </div>
     </div>
   );
+
+  if (typeof document === 'undefined') return modal;
+
+  return createPortal(modal, document.body);
 };
 
 export default WorkoutModal;

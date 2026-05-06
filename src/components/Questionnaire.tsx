@@ -19,6 +19,38 @@ import BackgroundDots from './BackgroundDots';
 
 // Webhook URL for Google Sheets integration
 const SHEET_WEBHOOK_URL = 'https://corsproxy.io/?key=7cf03de1&url=https://script.google.com/macros/s/AKfycbwFDdT0QVaP2jY8t4N0048PfQW_rYxB4noFaG-nExO9MZ5h3DCuNLUPNg3-qntT01tg/exec?gid=0';
+const LOADING_PROGRESS_KEY = 'fitbuddyai_loading_progress';
+
+type LoadingProgressState = {
+  progress: number;
+  stage: string;
+  currentStep: number;
+  totalSteps: number;
+  updatedAt: number;
+};
+
+const clampProgress = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
+
+const writeLoadingProgress = (progress: number, stage: string, currentStep = 0, totalSteps = 0) => {
+  const payload: LoadingProgressState = {
+    progress: clampProgress(progress),
+    stage,
+    currentStep,
+    totalSteps,
+    updatedAt: Date.now(),
+  };
+
+  try { sessionStorage.setItem(LOADING_PROGRESS_KEY, JSON.stringify(payload)); } catch (_error) {}
+  try { localStorage.setItem(LOADING_PROGRESS_KEY, JSON.stringify(payload)); } catch (_error) {}
+  try { window.dispatchEvent(new CustomEvent('fitbuddyai-loading-progress', { detail: payload })); } catch (_error) {}
+  return payload;
+};
+
+const clearLoadingProgress = () => {
+  try { sessionStorage.removeItem(LOADING_PROGRESS_KEY); } catch (_error) {}
+  try { localStorage.removeItem(LOADING_PROGRESS_KEY); } catch (_error) {}
+  try { window.dispatchEvent(new CustomEvent('fitbuddyai-loading-progress', { detail: null })); } catch (_error) {}
+};
 
 interface QuestionnaireProps {
   onComplete: (userData: UserData, workoutPlan: WorkoutPlan) => void;
@@ -851,6 +883,7 @@ const Questionnaire: React.FC<QuestionnaireProps> = ({ onComplete }) => {
         return;
       }
       setIsPlanGenerating(true);
+      writeLoadingProgress(5, 'Preparing your workout plan...', 0, 0);
       safeNavigateToLoading(true);
   setError(null);
   // Use the global loading route instead of the component-local LoadingScreen
@@ -867,6 +900,7 @@ const Questionnaire: React.FC<QuestionnaireProps> = ({ onComplete }) => {
         // We don't await this because webhook failures should not block plan generation.
         // sendToSheet already logs errors internally.
         sendToSheet(answers, allQuestions);
+      writeLoadingProgress(12, 'Preparing your answers for generation...', 0, 0);
          // Process answers to include custom inputs for "Other" options
          const processedAnswers = { ...answers };
         
@@ -932,18 +966,23 @@ const Questionnaire: React.FC<QuestionnaireProps> = ({ onComplete }) => {
 
             const weeks = parseWeeks(durationLabel);
             if (weeks <= 1) {
+              writeLoadingProgress(25, 'Generating your plan...', 1, 1);
               workoutPlan = await generateWorkoutPlan(userData, processedAnswers, allQuestions);
+              writeLoadingProgress(90, 'Finalizing your plan...', 1, 1);
             } else {
               // Generate week-by-week and concatenate dailyWorkouts
               const start = processedAnswers.startDate || new Date().toISOString().split('T')[0];
               const allWeeks: any[] = [];
               const currentStart = new Date(start);
+              writeLoadingProgress(20, `Generating week 1 of ${weeks}...`, 0, weeks);
               for (let w = 0; w < weeks; w++) {
                 const answersForWeek = { ...processedAnswers, startDate: currentStart.toISOString().split('T')[0], planDuration: '1 week (part)' };
                 try {
+                  writeLoadingProgress(20 + ((w / Math.max(1, weeks)) * 70), `Generating week ${w + 1} of ${weeks}...`, w + 1, weeks);
                   const weekPlan = await generateWorkoutPlan(userData, answersForWeek, allQuestions);
                   // Normalize weekPlan.dailyWorkouts dates if needed to ensure continuity
                   allWeeks.push(weekPlan);
+                  writeLoadingProgress(20 + (((w + 1) / Math.max(1, weeks)) * 70), `Completed week ${w + 1} of ${weeks}.`, w + 1, weeks);
                   // advance by 7 days
                   currentStart.setDate(currentStart.getDate() + 7);
                 } catch (err) {
@@ -952,6 +991,7 @@ const Questionnaire: React.FC<QuestionnaireProps> = ({ onComplete }) => {
                 }
               }
               // Merge weekly plans into one plan
+              writeLoadingProgress(92, 'Merging weekly plans...', weeks, weeks);
               const mergedDaily: any[] = [];
               let finalName = '';
               let finalDesc = '';
@@ -978,11 +1018,14 @@ const Questionnaire: React.FC<QuestionnaireProps> = ({ onComplete }) => {
               } as any;
             }
             console.log(`[PLAN] Workout plan generated on attempt ${attempt}`);
+            writeLoadingProgress(100, 'Your plan is ready.', weeks, weeks);
+            window.setTimeout(() => clearLoadingProgress(), 1500);
             break;
           } catch (err) {
             console.error(`[PLAN] Attempt ${attempt} failed:`, err);
             if (attempt === maxRetries + 1) {
               setError('Failed to generate workout plan. Please try again.');
+              clearLoadingProgress();
             }
           }
         }
@@ -1028,6 +1071,7 @@ const Questionnaire: React.FC<QuestionnaireProps> = ({ onComplete }) => {
     } catch (err) {
       console.error('[PLAN] Error generating plan:', err);
       setError('Failed to generate workout plan. Please try again.');
+      clearLoadingProgress();
     } finally {
       console.log('[PLAN] Done loading plan.');
       setIsPlanGenerating(false);
@@ -1437,6 +1481,7 @@ const Questionnaire: React.FC<QuestionnaireProps> = ({ onComplete }) => {
   console.log('Regenerate Plan clicked with userData:', currentUser);
   setError(null);
     try {
+  writeLoadingProgress(10, 'Preparing your updated plan...', 0, 0);
   safeNavigateToLoading();
       // When regenerating from MenuScreen we should also support week-by-week generation for long durations
       const durationLabel2 = (currentAnswers.planDuration || '').toString().toLowerCase();
@@ -1452,17 +1497,23 @@ const Questionnaire: React.FC<QuestionnaireProps> = ({ onComplete }) => {
       const weeks2 = parseWeeks2(durationLabel2);
       let newPlan: any;
       if (weeks2 <= 1) {
+        writeLoadingProgress(25, 'Regenerating your plan...', 1, 1);
         newPlan = await generateWorkoutPlan(currentUser as UserData, currentAnswers, currentQs);
+        writeLoadingProgress(90, 'Finalizing your updated plan...', 1, 1);
       } else {
         const start2 = currentAnswers.startDate || new Date().toISOString().split('T')[0];
         const chunks: any[] = [];
         const cs = new Date(start2);
+        writeLoadingProgress(20, `Regenerating week 1 of ${weeks2}...`, 0, weeks2);
         for (let w = 0; w < weeks2; w++) {
           const answersForWeek = { ...currentAnswers, startDate: cs.toISOString().split('T')[0], planDuration: '1 week (part)'};
+          writeLoadingProgress(20 + ((w / Math.max(1, weeks2)) * 70), `Regenerating week ${w + 1} of ${weeks2}...`, w + 1, weeks2);
           const weekPlan = await generateWorkoutPlan(currentUser as UserData, answersForWeek, currentQs);
           chunks.push(weekPlan);
+          writeLoadingProgress(20 + (((w + 1) / Math.max(1, weeks2)) * 70), `Completed week ${w + 1} of ${weeks2}.`, w + 1, weeks2);
           cs.setDate(cs.getDate() + 7);
         }
+        writeLoadingProgress(92, 'Merging your updated plan...', weeks2, weeks2);
         const merged: any[] = [];
         chunks.forEach(c => { if (Array.isArray(c.dailyWorkouts)) merged.push(...c.dailyWorkouts); });
         newPlan = { id: `merged-plan-${Date.now()}`, name: chunks[0]?.name || 'Merged Plan', description: chunks[0]?.description || '', startDate: chunks[0]?.startDate || start2, endDate: chunks[chunks.length - 1]?.endDate || merged[merged.length - 1]?.date || start2, totalDays: merged.length, weeklyStructure: chunks[0]?.weeklyStructure || [], dailyWorkouts: merged };
@@ -1502,10 +1553,13 @@ const Questionnaire: React.FC<QuestionnaireProps> = ({ onComplete }) => {
             const { id: _id, token: _token, access_token: _access_token, jwt: _jwt, sub: _sub, ...sanitized } = (currentUser as any) || {};
             onComplete(sanitized as UserData, mergedPlan);
           }
+          writeLoadingProgress(100, 'Your updated plan is ready.', weeks2, weeks2);
+          window.setTimeout(() => clearLoadingProgress(), 1500);
       navigate('/calendar');
     } catch (err) {
       console.error('Error regenerating plan:', err);
       setError('Failed to generate a new plan. Please try again.');
+          clearLoadingProgress();
     } finally {
       // no local loading state to clear; global /loading route handles UI
     }

@@ -1,5 +1,6 @@
 .vercel
 .env
+.local-test-credentials.json
 node_modules
 migrated_auth_users.json
 Run_Dev_Server_Command.txt

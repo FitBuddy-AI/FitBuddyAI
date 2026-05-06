@@ -19,7 +19,7 @@ const GEMINI_API_KEY = (process.env.GEMINI_API_KEY ||
   process.env.VITE_GEMINI_API_KEY ||
   process.env.NEXT_PUBLIC_GEMINI_API_KEY) as string | undefined;
 const GEMINI_URL = GEMINI_API_KEY
-  ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`
+  ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`
   : null;
 
 // Lightweight CORS helper so static builds and alternate origins can call this function

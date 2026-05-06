@@ -46,23 +46,6 @@ const IntroBubbles: React.FC<{ onFinish: () => void }> = ({ onFinish }) => {
     console.log('[IntroBubbles] useEffect: shouldShowIntro() =', show);
     setShouldShow(show);
   }, []);
-  // Store random seeds in a ref so they persist across renders but are not global
-  const randomSeeds = useRef<{ angle: number[]; dist: number[]; edge: number[]; edgePos: number[] }>();
-  if (!randomSeeds.current) {
-    randomSeeds.current = {
-      angle: Array.from({ length: bubblesData.length }, () => Math.random() * 30 - 15), // -15 to +15 deg
-      dist: Array.from({ length: bubblesData.length }, () => Math.random() * 30 - 15), // -15 to +15 px
-      edge: Array.from({ length: bubblesData.length }, () => Math.floor(Math.random() * 4)), // 0=top,1=right,2=bottom,3=left
-      edgePos: Array.from({ length: bubblesData.length }, () => Math.random() * 100), // 0-100vw/vh
-    };
-    try {
-      const small = JSON.stringify(randomSeeds.current).slice(0, 400);
-      console.log('[IntroBubbles] Random seeds generated:', small);
-    } catch {
-      console.log('[IntroBubbles] Random seeds generated');
-    }
-  }
-
   // Use a ref for onFinish to avoid effect restarts
   const onFinishRef = useRef(onFinish);
   useEffect(() => { onFinishRef.current = onFinish; }, [onFinish]);
@@ -121,52 +104,22 @@ const IntroBubbles: React.FC<{ onFinish: () => void }> = ({ onFinish }) => {
           <svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-dumbbell"><path d="m6.5 6.5 11 11"></path><path d="m21 21-1-1"></path><path d="m3 3 1 1"></path><path d="m18 22 4-4"></path><path d="m2 6 4-4"></path><path d="m3 10 7-7"></path><path d="m14 21 7-7"></path></svg>
         </div>
         <div className={phase === 'orbit' ? 'bubbles-rotate' : ''}>
-          {/* Add randomness to angle and distance for each bubble */}
+          {/* Bubble motion is class-based to keep styles in CSS. */}
           {bubblesData.map((bubble, i) => {
             // Only show visible bubbles
             if (i >= visibleBubbles) return null;
-            // Calculate offscreen position for each bubble
-            const edge = randomSeeds.current!.edge[i];
-            const edgePos = randomSeeds.current!.edgePos[i];
-            let offX = 0, offY = 0;
-            if (edge === 0) { // top
-              offX = edgePos;
-              offY = -10;
-            } else if (edge === 1) { // right
-              offX = 110;
-              offY = edgePos;
-            } else if (edge === 2) { // bottom
-              offX = edgePos;
-              offY = 110;
-            } else { // left
-              offX = -10;
-              offY = edgePos;
-            }
-            const angle = (360 / bubblesData.length) * i;
-            const distance = 210;
-            let bubbleClass = `bubble bubble-color-${bubble.color}`;
+            let bubbleClass = `bubble bubble-color-${bubble.color} bubble-index-${i}`;
             if (phase === 'flyin') bubbleClass += ' bubble-fly-in';
             if (phase === 'orbit') bubbleClass += ' bubble-orbit';
             if (phase === 'meet') bubbleClass += ' bubble-meet';
             try {
-              const summary = JSON.stringify({ i, phase, bubbleClass, offX, offY, angle, distance }).slice(0, 300);
+              const summary = JSON.stringify({ i, phase, bubbleClass }).slice(0, 300);
               console.log(`[IntroBubbles] Rendering bubble ${i}:`, summary);
             } catch {
               console.log(`[IntroBubbles] Rendering bubble ${i}`);
             }
             return (
-              <div
-                key={i}
-                className={bubbleClass}
-                style={
-                  {
-                    '--offscreen-x': `${offX}px`,
-                    '--offscreen-y': `${offY}px`,
-                    '--angle': `${angle}deg`,
-                    '--distance': `${distance}px`,
-                  } as React.CSSProperties
-                }
-              >
+              <div key={i} className={bubbleClass}>
                 <span className="bubble-icon">{bubble.icon}</span>
                 {bubble.text}
               </div>

@@ -50,6 +50,12 @@
   .fb-bottom{flex-direction:column;gap:8px}
 }
 
+@media (max-width: 768px) {
+  .fitbuddy-footer {
+    padding-bottom: calc(124px + env(safe-area-inset-bottom));
+  }
+}
+
 /* Dark mode */
 .theme-dark .fitbuddy-footer,
 body.theme-dark .fitbuddy-footer {

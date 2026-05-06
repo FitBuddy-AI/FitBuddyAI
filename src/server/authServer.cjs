@@ -37,7 +37,8 @@ function isUsernameBanned(username) {
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '1mb' }));
+app.use('/api/ai', bodyParser.json({ limit: '20mb' }));
 
 // Path to users.json file
 const _usersFile = path.join(__dirname, 'users.json');

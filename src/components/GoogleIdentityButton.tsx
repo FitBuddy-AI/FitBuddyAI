@@ -31,6 +31,27 @@ const GoogleIdentityButton: React.FC = () => {
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
   const useSupabase = Boolean(import.meta.env.VITE_LOCAL_USE_SUPABASE || import.meta.env.VITE_SUPABASE_URL);
 
+  // Quick reachability check for the configured Supabase URL. Returns false
+  // when the domain doesn't resolve or the request times out.
+  const checkSupabaseReachable = async (): Promise<boolean> => {
+    try {
+      const rawUrl = (import.meta.env.VITE_SUPABASE_URL && String(import.meta.env.VITE_SUPABASE_URL).trim()) || '';
+      if (!rawUrl) return false;
+      const url = rawUrl.replace(/\/$/, '') + '/auth/v1';
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 3000);
+      try {
+        await fetch(url, { method: 'GET', signal: controller.signal, cache: 'no-store' });
+        clearTimeout(id);
+        return true;
+      } finally {
+        clearTimeout(id);
+      }
+    } catch (e) {
+      return false;
+    }
+  };
+
   // If Supabase is available prefer the Supabase OAuth redirect flow. This
   // ensures sessions are created/managed by Supabase rather than doing local
   // ID token verification.
@@ -41,6 +62,16 @@ const GoogleIdentityButton: React.FC = () => {
           className="btn btn-google"
           onClick={async () => {
             try {
+              const reachable = await checkSupabaseReachable();
+              if (!reachable) {
+                window.showFitBuddyNotification?.({
+                  title: 'Sign-in Unavailable',
+                  message:
+                    'Google sign-in is temporarily unavailable because the authentication service cannot be reached. Please try again later or contact the site administrator.',
+                  variant: 'warning'
+                });
+                return;
+              }
               await signInWithGoogle();
             } catch (_e) {
               console.warn('[GoogleIdentityButton] signInWithGoogle failed', _e);

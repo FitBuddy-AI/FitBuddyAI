@@ -14,13 +14,21 @@ if (SUPABASE_URL && SUPABASE_KEY) {
 }
 
 // Accept multiple env var names so it works on Vercel, local dev, or when the
-// key was mistakenly added with a VITE_/NEXT_PUBLIC_ prefix.
-const GEMINI_API_KEY = (process.env.GEMINI_API_KEY ||
+// key was added with a different name. Also allow an OAuth-style bearer token
+// (for service accounts or short-lived credentials). If a bearer token is
+// provided we will call the endpoint without a ?key= parameter and send
+// Authorization: Bearer <token>.
+const GEMINI_API_KEY = (
+  process.env.GEMINI_API_KEY ||
   process.env.VITE_GEMINI_API_KEY ||
-  process.env.NEXT_PUBLIC_GEMINI_API_KEY) as string | undefined;
-const GEMINI_URL = GEMINI_API_KEY
-  ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`
-  : null;
+  process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
+  process.env.GOOGLE_API_KEY ||
+  process.env.GOOGLE_CLOUD_API_KEY ||
+  process.env.GENERATIVE_API_KEY
+) as string | undefined;
+const GEMINI_BEARER = (process.env.GEMINI_BEARER_TOKEN || process.env.GOOGLE_BEARER_TOKEN) as string | undefined;
+const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const GEMINI_URL = GEMINI_BEARER ? GEMINI_BASE : (GEMINI_API_KEY ? `${GEMINI_BASE}?key=${encodeURIComponent(GEMINI_API_KEY)}` : null);
 
 // Lightweight CORS helper so static builds and alternate origins can call this function
 function applyCors(req: any, res: any) {
@@ -245,15 +253,33 @@ export default async function handler(req: any, res: any) {
       // rather than a fabricated plan JSON so the UI shows a clear status.
       generatedText = 'Sorry, this feature is currently under development.';
     } else {
-      const response = await fetch(GEMINI_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-      });
-      const data = await response.json();
-      generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      if (!generatedText || String(generatedText).trim().length === 0) {
-        generatedText = 'Sorry, this feature is currently under development.';
+      // Call Gemini/Generative API. Support either API key query param or
+      // Authorization: Bearer header when a bearer token is present.
+      const headers: any = { 'Content-Type': 'application/json' };
+      if (GEMINI_BEARER) headers['Authorization'] = `Bearer ${GEMINI_BEARER}`;
+      try {
+        const response = await fetch(GEMINI_URL as string, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+        });
+        const text = await response.text();
+        let data: any = null;
+        try { data = JSON.parse(text); } catch (e) { data = null; }
+        if (!response.ok) {
+          console.error('[api/ai/generate] Gemini provider returned non-OK', response.status, text);
+          // Surface a helpful diagnostic to client (non-sensitive) so the UI
+          // can show a useful message while ops fixes the API keys/config.
+          return res.status(502).json({ message: 'AI provider error', status: response.status, body: data || text });
+        }
+        generatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (!generatedText || String(generatedText).trim().length === 0) {
+          // If provider returned empty text, return a short friendly message
+          generatedText = 'Sorry, this feature is currently under development.';
+        }
+      } catch (e: any) {
+        console.error('[api/ai/generate] failed to call Gemini provider', String(e));
+        return res.status(502).json({ message: 'AI provider request failed', error: String(e) });
       }
     }
 

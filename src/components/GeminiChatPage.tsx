@@ -36,25 +36,7 @@ const trimTrailingPunctuation = (value: string) => {
   return value.slice(0, end);
 };
 
-const escapeHtml = (value: string) =>
-  value.replace(/[&<>"']/g, character => {
-    switch (character) {
-      case '&':
-        return '&amp;';
-      case '<':
-        return '&lt;';
-      case '>':
-        return '&gt;';
-      case '"':
-        return '&quot;';
-      case "'":
-        return '&#39;';
-      default:
-        return character;
-    }
-  });
-
-const renderEscapedText = (value: string, key: string) => <span key={key} dangerouslySetInnerHTML={{ __html: escapeHtml(value) }} />;
+const renderTextFragment = (value: string, key: string) => <span key={key}>{value}</span>;
 
 const renderChatText = (text: string) => {
   const output: Array<React.ReactNode> = [];
@@ -65,7 +47,7 @@ const renderChatText = (text: string) => {
 
   while ((match = tokenRegex.exec(source)) !== null) {
     if (match.index > lastIndex) {
-      output.push(renderEscapedText(source.slice(lastIndex, match.index), `chat-text-${output.length}`));
+      output.push(renderTextFragment(source.slice(lastIndex, match.index), `chat-text-${output.length}`));
     }
 
     // match[1]: full markdown link [text](href)
@@ -96,24 +78,24 @@ const renderChatText = (text: string) => {
       output.push(
         isInternalChatLink(href) ? (
           <Link key={key} to={href} className="msg-link">
-            {renderEscapedText(displayText, `${key}-text`)}
+            {displayText}
           </Link>
         ) : (
           <a key={key} href={href} target="_blank" rel="noopener noreferrer" className="msg-link">
-            {renderEscapedText(displayText, `${key}-text`)}
+            {displayText}
           </a>
         )
       );
     } else if (href) {
       // Unsafe href: output link text only (don't make it clickable)
-      output.push(renderEscapedText(displayText, `${key}-text`));
+      output.push(renderTextFragment(displayText, `${key}-text`));
     }
 
     // Handle trailing punctuation for plain URLs only
     if (rawHref && displayText !== rawHref) {
       const trailing = rawHref.slice(displayText.length);
       if (trailing) {
-        output.push(renderEscapedText(trailing, `${key}-trailing`));
+        output.push(renderTextFragment(trailing, `${key}-trailing`));
       }
     }
 
@@ -121,7 +103,7 @@ const renderChatText = (text: string) => {
   }
 
   if (lastIndex < source.length) {
-    output.push(renderEscapedText(source.slice(lastIndex), `chat-text-${output.length}`));
+    output.push(renderTextFragment(source.slice(lastIndex), `chat-text-${output.length}`));
   }
 
   return output.length ? output : source;

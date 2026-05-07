@@ -186,9 +186,8 @@ export const saveUserData = (userData: any, opts?: { skipBackup?: boolean }): vo
     toStore.data = ensureUserId(toStore.data);
     const payload = { ...toStore, timestamp: Date.now() };
     userDataCache = payload;
-    try { (window as any).fitbuddyai_user_data = payload; } catch {}
     purgeLegacyUserStorage();
-    // Broadcast to other tabs so they can sync via BroadcastChannel
+    // Broadcast to other tabs so they can sync without exposing the full profile on window
     try {
       const bc = new BroadcastChannel('fitbuddyai');
       bc.postMessage({ type: 'user-update', timestamp: Date.now() });

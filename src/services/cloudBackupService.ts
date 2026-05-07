@@ -115,9 +115,28 @@ export async function restoreUserDataFromServer(userId: string) {
       }
     };
 
-  writeIfPresent('fitbuddyai_questionnaire_progress');
-  writeIfPresent('fitbuddyai_workout_plan');
-  writeIfPresent('fitbuddyai_assessment_data');
+  const writeMappedIfPresent = (storageKey: string, payloadKeys: string[]) => {
+    const value = payloadKeys
+      .map((key) => payload[key])
+      .find((candidate) => candidate !== undefined && candidate !== null);
+
+    if (value === undefined || value === null) return;
+
+    try {
+      const toStore = typeof value === 'string' ? value : JSON.stringify(value);
+      if (storageKey === 'fitbuddyai_workout_plan') {
+        try { sessionStorage.setItem(storageKey, toStore); } catch {}
+      } else {
+        try { localStorage.setItem(storageKey, toStore); } catch {}
+      }
+    } catch (_e) {
+      // ignore serialization/storage errors during restore
+    }
+  };
+
+  writeMappedIfPresent('fitbuddyai_questionnaire_progress', ['questionnaire_progress', 'fitbuddyai_questionnaire_progress']);
+  writeMappedIfPresent('fitbuddyai_workout_plan', ['workout_plan', 'fitbuddyai_workout_plan']);
+  writeMappedIfPresent('fitbuddyai_assessment_data', ['assessment_data', 'fitbuddyai_assessment_data']);
   try {
     const currentUser = loadUserData();
     const nextUser = {

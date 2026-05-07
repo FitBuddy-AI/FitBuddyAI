@@ -23,6 +23,22 @@ const STORAGE_KEYS = {
 import { backupUserDataToServer } from './cloudBackupService';
 import { ensureUserId } from '../utils/userHelpers';
 
+let userDataCache: { data: any; timestamp: number } | null = null;
+
+const purgeLegacyUserStorage = () => {
+  try { sessionStorage.removeItem(STORAGE_KEYS.USER_DATA); } catch {}
+  try { localStorage.removeItem(STORAGE_KEYS.USER_DATA); } catch {}
+  try { localStorage.removeItem(STORAGE_KEYS.USER_DATA_PERSISTED); } catch {}
+};
+
+export const getUserDataTimestamp = (): number => {
+  try {
+    return userDataCache?.timestamp || 0;
+  } catch {
+    return 0;
+  }
+};
+
 // Helper: parse a value that may be a JSON string, a double-encoded JSON string, or an object
 function safeParseStored<T = any>(raw: string | null): T | null {
   if (!raw) return null;
@@ -51,9 +67,7 @@ const BACKUP_DEBOUNCE_MS = 800; // wait briefly to batch rapid updates
 
 function scheduleBackup() {
   try {
-    // Read unified user payload from sessionStorage (we avoid storing sensitive user payload in localStorage)
-    const raw = sessionStorage.getItem(STORAGE_KEYS.USER_DATA);
-    const userId = raw ? (JSON.parse(raw).data?.id || null) : null;
+    const userId = userDataCache?.data?.id || null;
     if (!userId) return; // no signed-in user yet
     if (backupTimeout) {
       clearTimeout(backupTimeout);
@@ -160,16 +174,6 @@ export const clearQuestionnaireProgress = (): void => {
 // User Data
 export const saveUserData = (userData: any, opts?: { skipBackup?: boolean }): void => {
   try {
-    // If an explicit guard was set (e.g., during sign-out), avoid re-saving user data to localStorage.
-    try {
-      const guard = sessionStorage.getItem('fitbuddyai_no_auto_restore') || localStorage.getItem('fitbuddyai_no_auto_restore');
-      if (guard && !(opts && (opts as any).forceSave)) {
-        // Skip saving while guard is present to avoid races where background tasks re-persist user data during sign-out.
-        return;
-      }
-    } catch (e) {
-      // ignore errors reading storage
-    }
     // Accept either a raw user object or a wrapper { data, token }
     const toStore: any = {};
     if (userData && typeof userData === 'object' && ('data' in userData || 'token' in userData)) {
@@ -181,10 +185,9 @@ export const saveUserData = (userData: any, opts?: { skipBackup?: boolean }): vo
     }
     toStore.data = ensureUserId(toStore.data);
     const payload = { ...toStore, timestamp: Date.now() };
-    // Persist unified user payload in sessionStorage only (cleared on sign-out)
-    try { sessionStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(payload)); } catch {}
-    try { localStorage.removeItem(STORAGE_KEYS.USER_DATA); } catch {}
-    try { localStorage.removeItem(STORAGE_KEYS.USER_DATA_PERSISTED); } catch {}
+    userDataCache = payload;
+    try { (window as any).fitbuddyai_user_data = payload; } catch {}
+    purgeLegacyUserStorage();
     // Broadcast to other tabs so they can sync via BroadcastChannel
     try {
       const bc = new BroadcastChannel('fitbuddyai');
@@ -193,9 +196,6 @@ export const saveUserData = (userData: any, opts?: { skipBackup?: boolean }): vo
     } catch (_e) {}
     // When user signs in / user data changes, trigger backup of any existing keys
     if (!opts || !opts.skipBackup) scheduleBackup();
-    // Clear the "no auto restore" guard when a user explicitly signs in (cross-tab)
-    try { sessionStorage.removeItem('fitbuddyai_no_auto_restore'); } catch {}
-    try { localStorage.removeItem('fitbuddyai_no_auto_restore'); } catch {}
   } catch (error) {
     console.warn('Failed to save user data:', error);
   }
@@ -203,19 +203,9 @@ export const saveUserData = (userData: any, opts?: { skipBackup?: boolean }): vo
 
 export const loadUserData = (): any | null => {
   try {
-    const saved = sessionStorage.getItem(STORAGE_KEYS.USER_DATA);
-    if (!saved) return null;
-    
-    const { data, timestamp } = JSON.parse(saved);
-    
-    // Check if data is older than 7 days
-    const isExpired = Date.now() - timestamp > 7 * 24 * 60 * 60 * 1000;
-    if (isExpired) {
-      clearUserData();
-      return null;
-    }
-    
-    return ensureUserId(data);
+    const cached = userDataCache || ((window as any)?.fitbuddyai_user_data || null);
+    if (!cached || !cached.data) return null;
+    return ensureUserId(cached.data);
   } catch (error) {
     console.warn('Failed to load user data:', error);
     return null;
@@ -224,8 +214,10 @@ export const loadUserData = (): any | null => {
 
 export const clearUserData = (): void => {
   try {
+    userDataCache = null;
+    try { (window as any).fitbuddyai_user_data = null; } catch {}
     // Remove canonical user payloads and session data
-    try { sessionStorage.removeItem(STORAGE_KEYS.USER_DATA); } catch {}
+    purgeLegacyUserStorage();
     try { sessionStorage.removeItem(STORAGE_KEYS.WORKOUT_PLAN); } catch {}
     try { localStorage.removeItem(STORAGE_KEYS.USER_DATA); } catch {}
     try { localStorage.removeItem(STORAGE_KEYS.WORKOUT_PLAN); } catch {}

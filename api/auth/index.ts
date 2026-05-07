@@ -140,11 +140,19 @@ function getBearerToken(req: any): string | null {
 
 async function requireMatchingUser(req: any, expectedUserId: string): Promise<boolean> {
   const token = getBearerToken(req);
-  if (!token) return false;
+  if (!token) {
+    console.debug('[api/auth/requireMatchingUser] no bearer token present on request');
+    return false;
+  }
   try {
     const { data: authData, error } = await supabase.auth.getUser(token);
-    if (error || !authData?.user?.id) return false;
-    return authData.user.id === expectedUserId;
+    if (error || !authData?.user?.id) {
+      console.debug('[api/auth/requireMatchingUser] supabase.getUser failed', { error });
+      return false;
+    }
+    const matches = authData.user.id === expectedUserId;
+    if (!matches) console.debug('[api/auth/requireMatchingUser] token user id mismatch', { tokenUserId: authData.user.id, expectedUserId });
+    return matches;
   } catch {
     return false;
   }
@@ -226,6 +234,7 @@ export default async function handler(req: any, res: any) {
       const { userId, refresh_token } = req.body as { userId?: string; refresh_token?: string };
       if (!userId || !refresh_token) return res.status(400).json({ message: 'userId and refresh_token required.' });
 
+      console.debug('[api/auth/store_refresh] incoming Authorization:', !!req.headers?.authorization, 'cookiePresent:', !!req.headers?.cookie);
       const callerMatches = await requireMatchingUser(req, userId);
       if (!callerMatches) {
         return res.status(401).json({ message: 'Invalid or expired token.' });
@@ -261,6 +270,7 @@ export default async function handler(req: any, res: any) {
 
     if (action === 'refresh') {
       try {
+        console.debug('[api/auth/refresh] incoming request headers cookie:', req.headers?.cookie);
         const cookies = parseCookies(req.headers?.cookie as string | undefined);
         const sid = cookies[COOKIE_NAME];
         if (!sid) return res.status(401).json({ message: 'No session cookie present' });

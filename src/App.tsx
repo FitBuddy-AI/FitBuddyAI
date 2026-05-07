@@ -19,7 +19,7 @@ import EmailVerifyPage from './components/EmailVerifyPage';
 
 
 import { WorkoutPlan, DayWorkout, Exercise } from './types';
-import { loadUserData, loadWorkoutPlan, saveUserData, saveWorkoutPlan, clearUserData } from './services/localStorage';
+import { loadUserData, loadWorkoutPlan, saveUserData, saveWorkoutPlan, clearUserData, getUserDataTimestamp } from './services/localStorage';
 import { fetchUserById } from './services/authService';
 import { format } from 'date-fns';
 import { getPrimaryType, isWorkoutCompleteForStreak, resolveWorkoutTypes } from './utils/streakUtils';
@@ -93,15 +93,7 @@ function App() {
   useCloudBackup();
 
   const getStoredUserTimestamp = () => {
-    if (typeof window === 'undefined') return 0;
-    const raw = sessionStorage.getItem('fitbuddyai_user_data') || localStorage.getItem('fitbuddyai_user_data_persisted');
-    if (!raw) return 0;
-    try {
-      const parsed = JSON.parse(raw);
-      return Number(parsed?.timestamp || 0) || 0;
-    } catch (_err) {
-      return 0;
-    }
+    return getUserDataTimestamp();
   };
 
   const hasLocalUserOverride = () => {
@@ -167,6 +159,7 @@ function App() {
   useEffect(() => {
     if (!useSupabase) return;
     const { data: authListener } = supabase.auth.onAuthStateChange((_, session) => {
+      console.debug('[App] supabase auth state change, session present:', !!session, 'session=', session && { userId: session.user?.id });
       if (session) {
         try {
           fetch('/api/auth?action=store_refresh', {
@@ -186,7 +179,15 @@ function App() {
           } catch {}
         }
       } else {
-        try { fetch('/api/auth?action=clear_refresh', { method: 'POST', credentials: 'include' }).catch(() => {}); } catch {}
+        // Only call clear_refresh if the sign-out was initiated by the user.
+        let userInitiated = false;
+        try { userInitiated = Boolean((window as any).__fitbuddyai_user_signout_initiated); } catch {}
+        if (userInitiated) {
+          console.debug('[App] supabase auth state change: user-initiated sign-out — calling clear_refresh');
+          try { fetch('/api/auth?action=clear_refresh', { method: 'POST', credentials: 'include' }).catch(() => {}); } catch {}
+        } else {
+          console.debug('[App] supabase auth state change: session is null but not user-initiated — skipping clear_refresh');
+        }
       }
     });
     return () => {

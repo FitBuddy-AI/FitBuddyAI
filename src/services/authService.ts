@@ -371,6 +371,12 @@ export function getCurrentUser(): User | null {
 
 export async function signOutAndRevoke(timeoutMs = 2000): Promise<void> {
   try {
+    // Mark that a user-initiated sign-out is in progress so other listeners
+    // (e.g., onAuthStateChange) don't treat the auth null session as an
+    // unexpected sign-out and clear the server-side refresh cookie again.
+    try {
+      if (typeof window !== 'undefined') (window as any).__fitbuddyai_user_signout_initiated = true;
+    } catch {}
     const revokeUrl = '/api/auth?action=clear_refresh';
     // Always attempt a credentials-included fetch to clear server-side refresh cookie
     // and revoke the stored refresh token. sendBeacon does not include credentials
@@ -407,6 +413,10 @@ export async function signOutAndRevoke(timeoutMs = 2000): Promise<void> {
   } catch {
     // ignore
   }
+  // Clear the user-initiated sign-out flag after signOut completes
+  try {
+    if (typeof window !== 'undefined') delete (window as any).__fitbuddyai_user_signout_initiated;
+  } catch {}
 }
 
 export function signOut(): void {

@@ -42,7 +42,8 @@ const pkceOnlyStorage = (() => {
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 	auth: {
 		// Keep sessions in memory only, but allow PKCE verifier storage.
-		persistSession: true,
+		// Do NOT persist sessions to storage (we rely on server-side refresh cookie).
+		persistSession: false,
 		autoRefreshToken: false,
 		detectSessionInUrl: false,
 		flowType: 'pkce',

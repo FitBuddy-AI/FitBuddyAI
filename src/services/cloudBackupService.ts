@@ -1,6 +1,7 @@
 // src/services/cloudBackupService.ts
 // Handles backup/restore of questionnaire progress and workout plan to server
 
+import { loadUserData, saveUserData } from './localStorage';
 
 export async function backupUserDataToServer(userId: string) {
   const fitbuddyai_questionnaire_progress = localStorage.getItem('fitbuddyai_questionnaire_progress');
@@ -11,40 +12,24 @@ export async function backupUserDataToServer(userId: string) {
   try {
     // Only include keys that actually exist to avoid overwriting server data with nulls
   const payload: any = { userId };
-  if (fitbuddyai_questionnaire_progress != null) payload.fitbuddyai_questionnaire_progress = fitbuddyai_questionnaire_progress;
-  if (fitbuddyai_workout_plan != null) payload.fitbuddyai_workout_plan = fitbuddyai_workout_plan;
-  if (fitbuddyai_assessment_data != null) payload.fitbuddyai_assessment_data = fitbuddyai_assessment_data;
+    if (fitbuddyai_questionnaire_progress != null) payload.questionnaire_progress = fitbuddyai_questionnaire_progress;
+    if (fitbuddyai_workout_plan != null) payload.workout_plan = fitbuddyai_workout_plan;
+    if (fitbuddyai_assessment_data != null) payload.assessment_data = fitbuddyai_assessment_data;
   // include chat history and the user snapshot if present so the server can associate the backup correctly
   if (fitbuddyai_chat != null) payload.chat_history = fitbuddyai_chat;
 
-    // Attach local fitbuddyai_user_data so server can cross-check client identity when needed
+  const currentUser = loadUserData();
+  if (currentUser) {
+    payload.fitbuddyai_user_data = { data: currentUser };
+    if ((currentUser as any).accepted_terms !== undefined) payload.accepted_terms = (currentUser as any).accepted_terms;
+    if ((currentUser as any).accepted_privacy !== undefined) payload.accepted_privacy = (currentUser as any).accepted_privacy;
     try {
-  const rawUser = sessionStorage.getItem('fitbuddyai_user_data');
-      if (rawUser) {
-        try {
-          const parsed = JSON.parse(rawUser);
-          // include raw parsed user object for server diagnostics (avoid including tokens)
-          if (parsed && typeof parsed === 'object') {
-            const safe = { ...parsed };
-            if (safe.token) delete safe.token;
-            if (safe.jwt) delete safe.jwt;
-            payload.fitbuddyai_user_data = safe;
-            if (safe.accepted_terms !== undefined) payload.accepted_terms = safe.accepted_terms;
-            if (safe.accepted_privacy !== undefined) payload.accepted_privacy = safe.accepted_privacy;
-            if (safe.chat_history !== undefined && payload.chat_history === undefined) payload.chat_history = safe.chat_history;
-            // include streak if present on the stored user object or inside wrapper.data
-            try {
-              const possibleStreak = (safe && typeof safe === 'object') ? (safe.streak ?? (safe.data && safe.data.streak)) : undefined;
-              if (typeof possibleStreak === 'number') payload.streak = possibleStreak;
-              const possibleEnergy = (safe && typeof safe === 'object') ? (safe.energy ?? (safe.data && safe.data.energy)) : undefined;
-              if (typeof possibleEnergy === 'number') payload.energy = possibleEnergy;
-            } catch {
-              // Ignore errors extracting streak/energy; not critical for backup
-            }
-          }
-        } catch {}
-      }
+      const possibleStreak = (currentUser as any).streak;
+      if (typeof possibleStreak === 'number') payload.streak = possibleStreak;
+      const possibleEnergy = (currentUser as any).energy;
+      if (typeof possibleEnergy === 'number') payload.energy = possibleEnergy;
     } catch {}
+  }
   const init = await import('./apiAuth').then(m => m.attachAuthHeaders({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }));
   // Use the non-admin save endpoint for client-side backups
   await fetch('/api/userdata/save', init);
@@ -62,25 +47,20 @@ export function beaconBackupUserData(userId: string) {
     const fitbuddyai_workout_plan = sessionStorage.getItem('fitbuddyai_workout_plan');
     const fitbuddyai_assessment_data = localStorage.getItem('fitbuddyai_assessment_data');
     const payload: any = { userId };
-    if (fitbuddyai_questionnaire_progress != null) payload.fitbuddyai_questionnaire_progress = fitbuddyai_questionnaire_progress;
-    if (fitbuddyai_workout_plan != null) payload.fitbuddyai_workout_plan = fitbuddyai_workout_plan;
-    if (fitbuddyai_assessment_data != null) payload.fitbuddyai_assessment_data = fitbuddyai_assessment_data;
+    if (fitbuddyai_questionnaire_progress != null) payload.questionnaire_progress = fitbuddyai_questionnaire_progress;
+    if (fitbuddyai_workout_plan != null) payload.workout_plan = fitbuddyai_workout_plan;
+    if (fitbuddyai_assessment_data != null) payload.assessment_data = fitbuddyai_assessment_data;
     // Include acceptance flags and streak if present in unified user_data
     try {
-      const rawUser = sessionStorage.getItem('fitbuddyai_user_data');
-      if (rawUser) {
-        try {
-          const parsed = JSON.parse(rawUser);
-            if (parsed && typeof parsed === 'object') {
-              if (parsed.accepted_terms !== undefined) payload.accepted_terms = parsed.accepted_terms;
-              if (parsed.accepted_privacy !== undefined) payload.accepted_privacy = parsed.accepted_privacy;
-              if (parsed.chat_history !== undefined && payload.chat_history === undefined) payload.chat_history = parsed.chat_history;
-              const possibleStreak = (parsed && typeof parsed === 'object') ? (parsed.streak ?? (parsed.data && parsed.data.streak)) : undefined;
-              if (typeof possibleStreak === 'number') payload.streak = possibleStreak;
-              const possibleEnergy = (parsed && typeof parsed === 'object') ? (parsed.energy ?? (parsed.data && parsed.data.energy)) : undefined;
-              if (typeof possibleEnergy === 'number') payload.energy = possibleEnergy;
-          }
-        } catch {}
+      const currentUser = loadUserData();
+      if (currentUser) {
+        if ((currentUser as any).accepted_terms !== undefined) payload.accepted_terms = (currentUser as any).accepted_terms;
+        if ((currentUser as any).accepted_privacy !== undefined) payload.accepted_privacy = (currentUser as any).accepted_privacy;
+        if ((currentUser as any).chat_history !== undefined && payload.chat_history === undefined) payload.chat_history = (currentUser as any).chat_history;
+        const possibleStreak = (currentUser as any).streak;
+        if (typeof possibleStreak === 'number') payload.streak = possibleStreak;
+        const possibleEnergy = (currentUser as any).energy;
+        if (typeof possibleEnergy === 'number') payload.energy = possibleEnergy;
       }
     } catch {}
     // Include a minimal auth token if present so server can associate without a long request; attachAuthHeaders isn't available here.
@@ -118,48 +98,44 @@ export async function restoreUserDataFromServer(userId: string) {
     const payload = raw?.stored ?? raw?.payload ?? raw;
     if (!payload) return;
 
-    const writeIfPresent = (key: string) => {
+    const writeMappedIfPresent = (storageKey: string, payloadKeys: string[]) => {
+      const value = payloadKeys
+        .map((key) => payload[key])
+        .find((candidate) => candidate !== undefined && candidate !== null);
+
+      if (value === undefined || value === null) return;
+
       try {
-        const v = payload[key];
-        if (v === null || v === undefined) return;
-        // Ensure we write a string to localStorage. Server may return parsed objects.
-        const toStore = typeof v === 'string' ? v : JSON.stringify(v);
-        // Persist user-scoped data in sessionStorage only.
-        if (key === 'fitbuddyai_user_data' || key === 'fitbuddyai_workout_plan') {
-          try { sessionStorage.setItem(key, toStore); } catch {}
+        const toStore = typeof value === 'string' ? value : JSON.stringify(value);
+        if (storageKey === 'fitbuddyai_workout_plan') {
+          try { sessionStorage.setItem(storageKey, toStore); } catch {}
         } else {
-          // Non-user long-term keys may remain in localStorage
-          try { localStorage.setItem(key, toStore); } catch {}
+          try { localStorage.setItem(storageKey, toStore); } catch {}
         }
-      } catch (e) {
-        // ignore per-call errors
+      } catch (_e) {
+        // ignore serialization/storage errors during restore
       }
     };
 
-  writeIfPresent('fitbuddyai_questionnaire_progress');
-  writeIfPresent('fitbuddyai_workout_plan');
-  writeIfPresent('fitbuddyai_assessment_data');
-  // If username/avatar/energy were returned, merge them into the stored user profile
-  try {
-    const storedUserRaw = sessionStorage.getItem('fitbuddyai_user_data');
-    const storedUser = storedUserRaw ? JSON.parse(storedUserRaw) : null;
-    const existing = storedUser?.data || storedUser || null;
-    const usernameObj = payload.username ? { username: payload.username } : {};
-    const avatarObj = payload.avatar ? { avatar: payload.avatar } : {};
-    const energyObj = payload.energy !== undefined ? { energy: payload.energy } : {};
+    writeMappedIfPresent('fitbuddyai_questionnaire_progress', ['questionnaire_progress', 'fitbuddyai_questionnaire_progress']);
+    writeMappedIfPresent('fitbuddyai_workout_plan', ['workout_plan', 'fitbuddyai_workout_plan']);
+    writeMappedIfPresent('fitbuddyai_assessment_data', ['assessment_data', 'fitbuddyai_assessment_data']);
+
+    try {
+    const currentUser = loadUserData();
     const nextUser = {
-      ...(existing || {}),
-      ...usernameObj,
-      ...avatarObj,
-      ...energyObj,
+      ...(currentUser || {}),
+      ...(payload.username ? { username: payload.username } : {}),
+      ...(payload.avatar ? { avatar: payload.avatar } : {}),
+      ...(payload.energy !== undefined ? { energy: payload.energy } : {}),
+      ...(payload.streak !== undefined ? { streak: payload.streak } : {})
     };
     if (Object.keys(nextUser).length > 0) {
-      const wrapper = storedUser && storedUser.timestamp ? { ...storedUser, data: nextUser } : { data: nextUser, timestamp: Date.now() };
-      try { sessionStorage.setItem('fitbuddyai_user_data', JSON.stringify(wrapper)); } catch {}
+      try { saveUserData(nextUser, { skipBackup: true }); } catch {}
     }
-  } catch (e) {
-    console.warn('restoreUserDataFromServer: failed to merge username/avatar/energy into local user_data', e);
-  }
+    } catch (e) {
+    console.warn('restoreUserDataFromServer: failed to merge username/avatar/energy into in-memory user_data', e);
+    }
   // Also handle chat history: write into per-user chat key if present
   try {
     const chat = payload.chat_history ?? payload.fitbuddyai_chat ?? payload.fitbuddyai_chat_history;

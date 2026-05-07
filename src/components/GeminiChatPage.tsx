@@ -36,9 +36,9 @@ const trimTrailingPunctuation = (value: string) => {
   return value.slice(0, end);
 };
 
-const sanitizeChatFragment = (value: string) => String(value).replace(/[<>]/g, '');
-
-const renderTextFragment = (value: string, key: string) => <span key={key}>{sanitizeChatFragment(value)}</span>;
+const renderTextFragment = (value: string, key: string) => (
+  <span key={key}>{value}</span>
+);
 
 const renderChatText = (text: string) => {
   const output: Array<React.ReactNode> = [];
@@ -46,6 +46,40 @@ const renderChatText = (text: string) => {
   const tokenRegex = /(\[([^\]]+)\]\(([^)]+)\))|(https?:\/\/[^\s<>()]+|\/(?!\/)[^\s<>()]+)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
+  const sanitizeChatHref = (candidate: string): string | null => {
+    const value = String(candidate || '').trim();
+    if (!value) return null;
+    // Reject obvious HTML/meta-character and control-character payloads
+    if (/[\u0000-\u001F\u007F<>"'`]/.test(value)) return null;
+    // Reject encoded control/meta characters often used to bypass filters
+    if (/%0d|%0a|%00|%3c|%3e|%22|%27|%60/i.test(value)) return null;
+
+    try {
+      const isRelative = value.startsWith('/');
+      const parsed = new URL(value, window.location.origin);
+
+      // Allow only web-safe protocols after canonicalization
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return null;
+      }
+
+      if (isRelative) {
+        // Keep internal links internal and normalized for react-router Link
+        if (parsed.origin !== window.location.origin) return null;
+        const normalized = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+        if (!/^\/[A-Za-z0-9\-._~!$&()*+,;=:@\/?%#]*$/.test(normalized)) return null;
+        return normalized;
+      }
+
+      // External absolute URL: forbid username/password and require full canonical form
+      if (parsed.username || parsed.password) return null;
+      const canonical = parsed.toString();
+      if (!/^https?:\/\/[^\s]+$/i.test(canonical)) return null;
+      return canonical;
+    } catch {
+      return null;
+    }
+  };
 
   while ((match = tokenRegex.exec(source)) !== null) {
     if (match.index > lastIndex) {
@@ -74,16 +108,17 @@ const renderChatText = (text: string) => {
     }
 
     const key = `chat-link-${output.length}`;
+    const safeHref = href ? sanitizeChatHref(href) : null;
 
-    if (href && isSafeChatHref(href)) {
+    if (safeHref && isSafeChatHref(safeHref)) {
       // Safe href: create a clickable link
       output.push(
-        isInternalChatLink(href) ? (
-          <Link key={key} to={href} className="msg-link">
+        isInternalChatLink(safeHref) ? (
+          <Link key={key} to={safeHref} className="msg-link" aria-label={String(displayText)} title={String(displayText)}>
             {displayText}
           </Link>
         ) : (
-          <a key={key} href={href} target="_blank" rel="noopener noreferrer" className="msg-link">
+          <a key={key} href={safeHref} target="_blank" rel="noopener noreferrer" className="msg-link" aria-label={String(displayText)} title={String(displayText)}>
             {displayText}
           </a>
         )

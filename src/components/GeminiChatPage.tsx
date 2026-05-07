@@ -36,16 +36,8 @@ const trimTrailingPunctuation = (value: string) => {
   return value.slice(0, end);
 };
 
-const escapeHtml = (value: string) => String(value)
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;')
-  .replace(/'/g, '&#39;')
-  .replace(/`/g, '&#96;');
-
 const renderTextFragment = (value: string, key: string) => (
-  <span key={key} dangerouslySetInnerHTML={{ __html: escapeHtml(value) }} />
+  <span key={key}>{value}</span>
 );
 
 const renderChatText = (text: string) => {
@@ -116,11 +108,11 @@ const renderChatText = (text: string) => {
       output.push(
         isInternalChatLink(safeHref) ? (
           <Link key={key} to={safeHref} className="msg-link" aria-label={String(displayText)} title={String(displayText)}>
-            <span dangerouslySetInnerHTML={{ __html: escapeHtml(displayText) }} />
+            {displayText}
           </Link>
         ) : (
           <a key={key} href={safeHref} target="_blank" rel="noopener noreferrer" className="msg-link" aria-label={String(displayText)} title={String(displayText)}>
-            <span dangerouslySetInnerHTML={{ __html: escapeHtml(displayText) }} />
+            {displayText}
           </a>
         )
       );

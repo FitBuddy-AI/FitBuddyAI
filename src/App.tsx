@@ -19,7 +19,7 @@ import EmailVerifyPage from './components/EmailVerifyPage';
 
 
 import { WorkoutPlan, DayWorkout, Exercise } from './types';
-import { loadUserData, loadWorkoutPlan, saveUserData, saveWorkoutPlan, clearUserData, getAuthToken, saveAuthToken } from './services/localStorage';
+import { loadUserData, loadWorkoutPlan, saveUserData, saveWorkoutPlan, clearUserData } from './services/localStorage';
 import { fetchUserById } from './services/authService';
 import { format } from 'date-fns';
 import { getPrimaryType, isWorkoutCompleteForStreak, resolveWorkoutTypes } from './utils/streakUtils';
@@ -58,6 +58,25 @@ function App() {
   const lastSavedUserSnapshotRef = useRef('');
   const [homeIntroEnabled, setHomeIntroEnabled] = useState(() => loadHomeIntroEnabled());
   const useSupabase = Boolean(import.meta.env.VITE_LOCAL_USE_SUPABASE || import.meta.env.VITE_SUPABASE_URL);
+  // If an OAuth provider redirected to the app root with a ?code= param
+  // (because the OAuth client in the provider was configured with the root URL),
+  // redirect the browser to the deterministic `/signin` route so our
+  // SignInPage can exchange the code for a session.
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      const u = new URL(window.location.href);
+      const hasCode = u.searchParams.has('code');
+      if (hasCode && u.pathname !== '/signin') {
+        // Navigate to /signin preserving the querystring and hash.
+        const next = `/signin${u.search}${u.hash || ''}`;
+        // Use a full navigation to ensure the SignInPage effect runs on load.
+        window.location.replace(next);
+      }
+    } catch (_e) {
+      // ignore
+    }
+  }, []);
   // themeMode: 'auto' | 'light' | 'dark'
   const [themeMode, setThemeMode] = useState<'auto' | 'light' | 'dark'>(() => {
     if (typeof window === 'undefined') return 'auto';
@@ -98,44 +117,50 @@ function App() {
     if (!useSupabase) return;
     let cancelled = false;
 
-    const hydrateFromSupabaseSession = async () => {
+    const hydrateSessionFromServer = async () => {
       try {
-        const { data, error } = await supabase.auth.getSession();
-        if (error) {
-          console.warn('[App] Failed to read Supabase session on startup', error);
+        // Supabase session persistence is disabled for security.
+        // We use the server-side fitbuddyai_sid cookie to get a fresh access token.
+        console.log('[App] Fetching fresh access token from server on startup...');
+        const refreshRes = await fetch('/api/auth?action=refresh', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (!refreshRes.ok) {
+          console.warn('[App] Server refresh returned status:', refreshRes.status, '— user not logged in');
           return;
         }
 
-        const session = data?.session;
-        if (!session?.user?.id) return;
-
-        if (session.access_token) {
-          try { saveAuthToken(session.access_token); } catch {}
+        const { access_token, user_id } = await refreshRes.json();
+        if (!access_token || !user_id) {
+          console.warn('[App] Server refresh did not return token or user_id');
+          return;
         }
 
-        try {
-          await fetch('/api/auth?action=store_refresh', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: session.user.id, refresh_token: session.refresh_token })
-          });
-        } catch (refreshStoreErr) {
-          console.warn('[App] Failed to persist refresh token after OAuth callback', refreshStoreErr);
+        // Store the access token in a way that attachAuthHeaders can access it.
+        // We keep it in a module-level variable (see setCurrentAccessToken below).
+        if (typeof window !== 'undefined') {
+          (window as any).fitbuddyai_access_token = access_token;
+          (window as any).fitbuddyai_token_expires = Date.now() + 3600000; // 1 hour
         }
 
-        const freshUser = await fetchUserById(session.user.id);
+        // Fetch the user's profile to populate state
+        const freshUser = await fetchUserById(user_id);
         if (!freshUser || cancelled) return;
 
-        saveUserData({ data: freshUser, token: session.access_token || null }, { skipBackup: true });
+        // Save user profile data only (not the token)
+        saveUserData({ data: freshUser }, { skipBackup: true });
         setUserData(freshUser);
+        console.log('[App] User session hydrated from server');
         try { window.dispatchEvent(new Event('fitbuddyai-login')); } catch {}
       } catch (err) {
-        console.warn('[App] Supabase startup session hydration failed', err);
+        console.warn('[App] Server session hydration failed', err);
       }
     };
 
-    hydrateFromSupabaseSession();
+    hydrateSessionFromServer();
     return () => { cancelled = true; };
   }, [useSupabase]);
 
@@ -152,7 +177,13 @@ function App() {
           }).catch(() => {});
         } catch (_e) {}
         if (session.access_token) {
-          try { saveAuthToken(session.access_token); } catch {}
+          // Store access token in memory (window object) instead of sessionStorage
+          try { 
+            if (typeof window !== 'undefined') {
+              (window as any).fitbuddyai_access_token = session.access_token;
+              (window as any).fitbuddyai_token_expires = Date.now() + 3600000; // 1 hour
+            }
+          } catch {}
         }
       } else {
         try { fetch('/api/auth?action=clear_refresh', { method: 'POST', credentials: 'include' }).catch(() => {}); } catch {}
@@ -178,7 +209,7 @@ function App() {
       document.documentElement.classList.toggle('theme-dark', isDark);
       document.body.classList.toggle('theme-dark', isDark);
       // keep legacy key for backward compatibility
-      try { localStorage.setItem('fitbuddy_theme', effective); } catch {}
+      try { sessionStorage.setItem('fitbuddy_theme', effective); } catch {}
     };
 
     applyEffective(themeMode);
@@ -213,7 +244,7 @@ function App() {
 
   const setThemeModeHandler = (mode: 'auto' | 'light' | 'dark') => {
     setThemeMode(mode);
-    try { localStorage.setItem('fitbuddy_theme_mode', mode); } catch {}
+    try { sessionStorage.setItem('fitbuddy_theme_mode', mode); } catch {}
     // If user explicitly selected light/dark, persist that preference to user profile
     if (mode === 'light' || mode === 'dark') {
       const themeStr = mode === 'dark' ? 'theme-dark' : 'theme-light';
@@ -372,7 +403,13 @@ function App() {
           if (resp.ok) {
             const data = await resp.json();
             if (data?.access_token) {
-              try { saveAuthToken(data.access_token); } catch {}
+              // Store access token in memory instead of sessionStorage
+              try {
+                if (typeof window !== 'undefined') {
+                  (window as any).fitbuddyai_access_token = data.access_token;
+                  (window as any).fitbuddyai_token_expires = Date.now() + 3600000; // 1 hour
+                }
+              } catch {}
             }
           }
         } catch (err) {
@@ -603,10 +640,8 @@ function App() {
         <Route path="/library" element={<PersonalLibraryPage />} />
         <Route path="/profile" element={<ProfilePage userData={userData} onProfileUpdate={(user) => {
           try {
-            const token = getAuthToken();
-            // Persist updated user data and preserve session token
-            if (token) saveUserData({ data: user, token });
-            else saveUserData({ data: user });
+            // Persist updated user data (token is kept in memory only)
+            saveUserData({ data: user });
           } catch (e) {
             // ignore persistence errors
           }

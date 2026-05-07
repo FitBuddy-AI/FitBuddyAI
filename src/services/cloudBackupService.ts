@@ -4,7 +4,7 @@
 
 export async function backupUserDataToServer(userId: string) {
   const fitbuddyai_questionnaire_progress = localStorage.getItem('fitbuddyai_questionnaire_progress');
-  const fitbuddyai_workout_plan = localStorage.getItem('fitbuddyai_workout_plan');
+  const fitbuddyai_workout_plan = sessionStorage.getItem('fitbuddyai_workout_plan');
   const fitbuddyai_assessment_data = localStorage.getItem('fitbuddyai_assessment_data');
   const fitbuddyai_chat = sessionStorage.getItem(`fitbuddyai_chat_${userId}`) || localStorage.getItem(`fitbuddyai_chat_${userId}`);
   if (!userId) return;
@@ -19,7 +19,7 @@ export async function backupUserDataToServer(userId: string) {
 
     // Attach local fitbuddyai_user_data so server can cross-check client identity when needed
     try {
-  const rawUser = sessionStorage.getItem('fitbuddyai_user_data') || localStorage.getItem('fitbuddyai_user_data');
+  const rawUser = sessionStorage.getItem('fitbuddyai_user_data');
       if (rawUser) {
         try {
           const parsed = JSON.parse(rawUser);
@@ -59,7 +59,7 @@ export function beaconBackupUserData(userId: string) {
     if (!userId) return false;
     if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return false;
     const fitbuddyai_questionnaire_progress = localStorage.getItem('fitbuddyai_questionnaire_progress');
-    const fitbuddyai_workout_plan = localStorage.getItem('fitbuddyai_workout_plan');
+    const fitbuddyai_workout_plan = sessionStorage.getItem('fitbuddyai_workout_plan');
     const fitbuddyai_assessment_data = localStorage.getItem('fitbuddyai_assessment_data');
     const payload: any = { userId };
     if (fitbuddyai_questionnaire_progress != null) payload.fitbuddyai_questionnaire_progress = fitbuddyai_questionnaire_progress;
@@ -67,7 +67,7 @@ export function beaconBackupUserData(userId: string) {
     if (fitbuddyai_assessment_data != null) payload.fitbuddyai_assessment_data = fitbuddyai_assessment_data;
     // Include acceptance flags and streak if present in unified user_data
     try {
-      const rawUser = sessionStorage.getItem('fitbuddyai_user_data') || localStorage.getItem('fitbuddyai_user_data');
+      const rawUser = sessionStorage.getItem('fitbuddyai_user_data');
       if (rawUser) {
         try {
           const parsed = JSON.parse(rawUser);
@@ -124,12 +124,11 @@ export async function restoreUserDataFromServer(userId: string) {
         if (v === null || v === undefined) return;
         // Ensure we write a string to localStorage. Server may return parsed objects.
         const toStore = typeof v === 'string' ? v : JSON.stringify(v);
-        // Persist restored keys into sessionStorage only for sensitive or user-scoped data.
-        // We intentionally avoid writing restored user payload or chat to localStorage to prevent tokens/exposure.
-        if (key === 'fitbuddyai_user_data') {
+        // Persist user-scoped data in sessionStorage only.
+        if (key === 'fitbuddyai_user_data' || key === 'fitbuddyai_workout_plan') {
           try { sessionStorage.setItem(key, toStore); } catch {}
         } else {
-          // Non-user long-term keys (questionnaire/workout/assessment) may remain in localStorage
+          // Non-user long-term keys may remain in localStorage
           try { localStorage.setItem(key, toStore); } catch {}
         }
       } catch (e) {
@@ -142,7 +141,7 @@ export async function restoreUserDataFromServer(userId: string) {
   writeIfPresent('fitbuddyai_assessment_data');
   // If username/avatar/energy were returned, merge them into the stored user profile
   try {
-    const storedUserRaw = sessionStorage.getItem('fitbuddyai_user_data') || localStorage.getItem('fitbuddyai_user_data');
+    const storedUserRaw = sessionStorage.getItem('fitbuddyai_user_data');
     const storedUser = storedUserRaw ? JSON.parse(storedUserRaw) : null;
     const existing = storedUser?.data || storedUser || null;
     const usernameObj = payload.username ? { username: payload.username } : {};
@@ -157,7 +156,6 @@ export async function restoreUserDataFromServer(userId: string) {
     if (Object.keys(nextUser).length > 0) {
       const wrapper = storedUser && storedUser.timestamp ? { ...storedUser, data: nextUser } : { data: nextUser, timestamp: Date.now() };
       try { sessionStorage.setItem('fitbuddyai_user_data', JSON.stringify(wrapper)); } catch {}
-      try { localStorage.setItem('fitbuddyai_user_data', JSON.stringify(wrapper)); } catch {}
     }
   } catch (e) {
     console.warn('restoreUserDataFromServer: failed to merge username/avatar/energy into local user_data', e);
@@ -178,13 +176,12 @@ export async function restoreUserDataFromServer(userId: string) {
     try {
       if (typeof payload.streak !== 'undefined') {
         try {
-          const storedUserRaw = sessionStorage.getItem('fitbuddyai_user_data') || localStorage.getItem('fitbuddyai_user_data');
+          const storedUserRaw = sessionStorage.getItem('fitbuddyai_user_data');
           const storedWrapper = storedUserRaw ? JSON.parse(storedUserRaw) : null;
           const existing = storedWrapper?.data || storedWrapper || {};
           const merged = { ...(existing || {}), streak: payload.streak };
           const wrapper = storedWrapper && storedWrapper.timestamp ? { ...storedWrapper, data: merged } : { data: merged, timestamp: Date.now() };
           try { sessionStorage.setItem('fitbuddyai_user_data', JSON.stringify(wrapper)); } catch {}
-          try { localStorage.setItem('fitbuddyai_user_data', JSON.stringify(wrapper)); } catch {}
           try { window.dispatchEvent(new CustomEvent('fitbuddyai-user-updated', { detail: merged })); } catch {}
         } catch (_e) {}
       }

@@ -38,6 +38,7 @@ const GoogleIdentityButton: React.FC = () => {
     return (
       <div className="google-fallback">
         <button
+          type="button"
           className="btn btn-google"
           onClick={async () => {
             try {
@@ -68,6 +69,7 @@ const GoogleIdentityButton: React.FC = () => {
     return (
       <div className="google-fallback">
         <button
+          type="button"
           className="btn btn-google"
           onClick={() => window.showFitBuddyNotification?.({ title: 'Sign-in Unavailable', message: 'Google sign-in is not configured. Please set VITE_GOOGLE_CLIENT_ID in your .env and register the OAuth client in Google Cloud Console.', variant: 'warning' })}
         >
@@ -140,6 +142,7 @@ const GoogleIdentityButton: React.FC = () => {
       {!window.google && (
         <div className="google-fallback">
           <button
+            type="button"
             className="btn btn-google"
             onClick={() => window.showFitBuddyNotification?.({ title: 'Sign-in Unavailable', message: 'Google sign-in is not available. Try enabling Supabase OAuth or add VITE_GOOGLE_CLIENT_ID to your .env', variant: 'warning' })}
           >

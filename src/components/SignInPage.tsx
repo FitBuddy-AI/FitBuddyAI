@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { saveAssessmentData, saveWorkoutPlan, saveUserData } from '../services/localStorage';
-import { signIn } from '../services/authService';
+import { saveAssessmentData, saveWorkoutPlan, saveUserData, clearUserData } from '../services/localStorage';
+import { signIn, fetchUserById } from '../services/authService';
 import GoogleIdentityButton from './GoogleIdentityButton';
 import { restoreUserDataFromServer } from '../services/cloudBackupService';
 import { useNavigate } from 'react-router-dom';
@@ -23,6 +23,162 @@ const SignInPage: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    const useSupabase = Boolean(import.meta.env.VITE_LOCAL_USE_SUPABASE || import.meta.env.VITE_SUPABASE_URL);
+    if (!useSupabase || typeof window === 'undefined') return;
+
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get('code');
+    if (!code) return;
+    const handledKey = `fitbuddyai_oauth_handled_${code}`;
+    try {
+      if (sessionStorage.getItem(handledKey)) return;
+      sessionStorage.setItem(handledKey, '1');
+    } catch (_e) {}
+
+    const handleOAuthCallback = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        // Prevent stale local user data from masking a newly authenticated account.
+        try { clearUserData(); } catch {}
+        // Diagnostic: list sessionStorage keys to confirm PKCE artifacts exist.
+        try {
+          const keys = Object.keys(sessionStorage || {}).slice(0, 50);
+          console.log('[SignInPage] sessionStorage keys (partial):', keys);
+          const pkceLikely = keys.some(k => /code_verifier|pkce|supabase|sb-/.test(k));
+          console.log('[SignInPage] PKCE-like key present in sessionStorage?', pkceLikely);
+        } catch (_e) {}
+
+        let data: any = null;
+
+        // Always perform manual PKCE exchange first so the verifier isn't cleared
+        // by the SDK before we can read it.
+        const supabaseBase = (import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
+        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+        if (!supabaseBase || !anonKey) throw new Error('Supabase URL or anon key missing');
+
+        let projectRef = '';
+        try { projectRef = new URL(supabaseBase).hostname.split('.')[0]; } catch {}
+        const verifierKey = projectRef ? `sb-${projectRef}-auth-token-code-verifier` : 'code_verifier';
+        const cachedVerifier = sessionStorage.getItem(verifierKey) || sessionStorage.getItem('code_verifier') || '';
+        console.log('[SignInPage] PKCE verifier present?', Boolean(cachedVerifier));
+        if (!cachedVerifier) throw new Error('PKCE verifier missing in sessionStorage');
+
+        const tokenRes = await fetch(`${supabaseBase}/auth/v1/token?grant_type=pkce`, {
+          method: 'POST',
+          headers: {
+            apikey: anonKey,
+            authorization: `Bearer ${anonKey}`,
+            'Content-Type': 'application/json;charset=UTF-8'
+          },
+          body: JSON.stringify({ auth_code: code, code_verifier: cachedVerifier })
+        });
+        if (!tokenRes.ok) {
+          const text = await tokenRes.text();
+          throw new Error(text || `PKCE token exchange failed (${tokenRes.status})`);
+        }
+        const tokenData = await tokenRes.json();
+        data = { session: tokenData, user: tokenData?.user };
+
+        // Clear verifier after successful exchange
+        try { sessionStorage.removeItem(verifierKey); } catch {}
+        try { sessionStorage.removeItem('code_verifier'); } catch {}
+
+        // Store access token in memory only
+        if (tokenData?.access_token) {
+          try {
+            (window as any).fitbuddyai_access_token = tokenData.access_token;
+            const expiresIn = Number(tokenData.expires_in || 3600) * 1000;
+            (window as any).fitbuddyai_token_expires = Date.now() + expiresIn;
+          } catch {}
+        }
+
+        const session = data?.session as any;
+        const sessionUser = (session && session.user) || data?.user || null;
+        if (!sessionUser?.id) {
+          throw new Error('Google sign-in did not return a valid session.');
+        }
+
+        const baseProfile = {
+          id: sessionUser.id,
+          email: sessionUser.email || '',
+          username: sessionUser.user_metadata?.full_name || sessionUser.user_metadata?.name || sessionUser.email || 'User',
+          avatar: sessionUser.user_metadata?.avatar_url || sessionUser.user_metadata?.picture || '/images/fitbuddy_head.png'
+        };
+
+        // DO NOT store the access token in sessionStorage/localStorage.
+        // Access tokens are kept in memory only (in React state in App.tsx).
+        // The refresh token is already stored server-side via /api/auth?action=store_refresh.
+
+        const accessToken = session?.access_token || (data as any)?.access_token || (window as any)?.fitbuddyai_access_token || '';
+        try {
+          await fetch('/api/auth?action=store_refresh', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+            },
+            body: JSON.stringify({ userId: sessionUser.id, refresh_token: session?.refresh_token || (data as any)?.refresh_token })
+          });
+        } catch (refreshStoreErr) {
+          console.warn('[SignInPage] Failed to persist refresh token after OAuth callback', refreshStoreErr);
+        }
+
+        // Ensure a usable profile exists in fitbuddyai_userdata for this auth user.
+        try {
+          if (baseProfile.email && baseProfile.username) {
+            await fetch('/api/auth?action=create_profile', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+              },
+              body: JSON.stringify({ id: baseProfile.id, email: baseProfile.email, username: baseProfile.username })
+            });
+          }
+        } catch (profileErr) {
+          console.warn('[SignInPage] create_profile failed', profileErr);
+        }
+
+        const freshUser = await fetchUserById(sessionUser.id);
+        const resolvedUser = {
+          ...baseProfile,
+          ...(freshUser || {})
+        };
+        if (!resolvedUser.email) resolvedUser.email = baseProfile.email;
+        if (!resolvedUser.username) resolvedUser.username = baseProfile.username;
+        if (!resolvedUser.avatar) resolvedUser.avatar = baseProfile.avatar;
+        // Save user profile data (not the token) — user data is non-sensitive and needed for UI
+        saveUserData({ data: resolvedUser }, { skipBackup: true, forceSave: true } as any);
+        try { window.dispatchEvent(new Event('fitbuddyai-login')); } catch {}
+
+        navigate('/profile', { replace: true });
+      } catch (err: any) {
+        console.warn('[SignInPage] OAuth callback handling failed', err);
+        // Provide a clearer message for PKCE/code_verifier failures
+        const msg = String(err?.message || err || 'Google sign-in failed. Please try again.');
+        if (/both auth code and code verifier should be non-empty|code_verifier/i.test(msg)) {
+          const friendly = 'OAuth exchange failed: PKCE verifier missing. Ensure your OAuth redirect URI is set to http://localhost:5173/signin (not the root), clear site data (sessionStorage) and retry. If using multiple tabs, start sign-in in the same tab.';
+          setError(friendly);
+        } else {
+          setError(msg);
+        }
+      } finally {
+        // Remove one-time auth code from URL after processing.
+        url.searchParams.delete('code');
+        const search = url.searchParams.toString();
+        const nextUrl = `${url.pathname}${search ? `?${search}` : ''}${url.hash}`;
+        window.history.replaceState({}, document.title, nextUrl);
+        setLoading(false);
+      }
+    };
+
+    handleOAuthCallback();
+    return () => {};
+  }, [navigate]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -30,29 +186,16 @@ const SignInPage: React.FC = () => {
     const normalizedEmail = String(email).trim().toLowerCase();
     try {
       const dataUser = await signIn(normalizedEmail, password);
-      // The signIn helper will store token and user in localStorage when using Supabase or the server
+      // The signIn helper will handle refresh token storage server-side.
+      // We store the user profile data only (not the token).
       const data = dataUser ? { user: dataUser, token: null } : null;
       if (data && data.user) {
       // Use central saveUserData but skip auto-backup for now so we don't overwrite server data
       // before a restore completes. After restore completes, existing scheduleBackup calls
       // (from saving assessment/plan) will run as needed.
-        // Save user data and token into the unified user_data object so attachAuthHeaders finds it
-  const toSave = { data: data.user, token: data.token || null };
+        // Save user data (profile only, no token) into the unified user_data object
+  const toSave = { data: data.user };
   try { saveUserData(toSave, { skipBackup: true, forceSave: true } as any); } catch {}
-        // Wait briefly for sessionStorage token to be available for attachAuthHeaders
-        const waitForToken = async (timeoutMs = 2000) => {
-          const start = Date.now();
-          while (Date.now() - start < timeoutMs) {
-            try {
-              const { getAuthToken, loadUserData } = await import('../services/localStorage');
-              const token = getAuthToken() || (loadUserData()?.token) || (loadUserData()?.data?.token) || null;
-              if (token) return token;
-            } catch (_e) {}
-            await new Promise(r => setTimeout(r, 150));
-          }
-          return null;
-        };
-        await waitForToken(3000);
         // Attempt to restore any server-stored questionnaire/workout/assessment data
         try {
           await restoreUserDataFromServer(data.user.id);

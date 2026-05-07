@@ -399,6 +399,11 @@ body:not(.theme-dark) .explore-button { color: #fff; }
   box-shadow: 0 14px 30px rgba(11, 126, 81, 0.35);
 }
 
+/* small gap used for inline icons to avoid inline styles */
+.icon-gap {
+  margin-right: 4px;
+}
+
 .explore-drawer button:active {
   background: var(--nav-tab-light-hover);
   border-color: var(--nav-tab-light-hover);

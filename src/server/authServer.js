@@ -18,6 +18,7 @@ import jwt from 'jsonwebtoken';
 import fs from 'fs';
 import { createClient } from '@supabase/supabase-js';
 import adminRoutes from './adminRoutes.js';
+import crypto from 'crypto';
 
 // Rate limiter for health endpoint - allow more requests since it's lightweight
 const healthLimiter = rateLimit({
@@ -229,14 +230,6 @@ function isAdminRequest(req) {
   return auth === `Bearer ${adminToken}`;
 }
 
-function getBearerToken(req) {
-  const auth = String(req.headers.authorization || req.headers.Authorization || '');
-  if (!auth) return null;
-  if (!auth.toLowerCase().startsWith('bearer ')) return null;
-  const token = auth.slice(7).trim();
-  return token || null;
-}
-
 app.get('/api/admin/users', adminUsersLimiter, async (req, res) => {
   try {
     console.log('[authServer] /api/ai/generate request headers:', {
@@ -327,6 +320,7 @@ const usersFile = path.join(__dirname, 'users.json');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
 let supabase = null;
 if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
   try {
@@ -335,6 +329,125 @@ if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
   } catch (e) {
     console.warn('[authServer] Failed to initialize Supabase client:', e);
     supabase = null;
+  }
+}
+
+const ENC_ALGO = 'aes-256-gcm';
+const COOKIE_NAME = 'fitbuddyai_sid';
+const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
+
+const parseEncKeys = () => {
+  const out = [];
+  const multi = String(process.env.REFRESH_TOKEN_ENC_KEYS || '').trim();
+  if (multi) {
+    for (const part of multi.split(',').map(item => item.trim()).filter(Boolean)) {
+      const [id, ...rest] = part.split('=');
+      const raw = rest.join('=').trim();
+      if (!id || !raw) continue;
+      out.push({ id: id.trim(), key: crypto.createHash('sha256').update(raw).digest() });
+    }
+  } else {
+    const single = String(process.env.REFRESH_TOKEN_ENC_KEY || process.env.REFRESH_TOKEN_KEY || '').trim();
+    if (single) {
+      const id = String(process.env.REFRESH_TOKEN_ENC_KEY_ID || 'k1').trim() || 'k1';
+      out.push({ id, key: crypto.createHash('sha256').update(single).digest() });
+    }
+  }
+  return out;
+};
+
+const ENC_KEYS = parseEncKeys();
+const CURRENT_KEY_ID = ENC_KEYS[0]?.id || '';
+const CURRENT_KEY = ENC_KEYS[0]?.key || null;
+
+function encryptToken(plain) {
+  if (!CURRENT_KEY) throw new Error('Refresh token encryption key is not configured');
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv(ENC_ALGO, CURRENT_KEY, iv);
+  const encrypted = Buffer.concat([cipher.update(String(plain), 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `${CURRENT_KEY_ID}:${Buffer.concat([iv, tag, encrypted]).toString('base64')}`;
+}
+
+function decryptToken(blobWithOptionalPrefix) {
+  let keyId = null;
+  let blobB64 = blobWithOptionalPrefix;
+  const match = String(blobWithOptionalPrefix || '').match(/^([A-Za-z0-9_-]+):(.+)$/);
+  if (match) {
+    keyId = match[1];
+    blobB64 = match[2];
+  }
+  const buf = Buffer.from(blobB64, 'base64');
+  if (buf.length < 28) throw new Error('Invalid encrypted blob');
+  const iv = buf.slice(0, 12);
+  const tag = buf.slice(12, 28);
+  const ciphertext = buf.slice(28);
+
+  const tryKeys = (keys) => {
+    for (const item of keys) {
+      try {
+        const decipher = crypto.createDecipheriv(ENC_ALGO, item.key, iv);
+        decipher.setAuthTag(tag);
+        const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+        return { value: decrypted.toString('utf8'), keyId: item.id };
+      } catch {
+        // try next key
+      }
+    }
+    return null;
+  };
+
+  if (keyId) {
+    const found = ENC_KEYS.find(item => item.id === keyId);
+    if (found) {
+      const out = tryKeys([found]);
+      if (out) return out;
+      throw new Error('Failed to decrypt with specified key id');
+    }
+  }
+  const out = tryKeys(ENC_KEYS);
+  if (!out) throw new Error('Failed to decrypt refresh token with any known key');
+  return out;
+}
+
+function parseCookies(cookieHeader) {
+  const out = {};
+  if (!cookieHeader) return out;
+  for (const part of cookieHeader.split(';')) {
+    const [rawKey, ...rest] = part.split('=');
+    const key = rawKey?.trim();
+    if (!key) continue;
+    const rawValue = (rest || []).join('=');
+    if (!rawValue) {
+      out[key] = '';
+      continue;
+    }
+    try {
+      out[key] = decodeURIComponent(rawValue.trim());
+    } catch {
+      out[key] = rawValue.trim();
+    }
+  }
+  return out;
+}
+
+function getBearerToken(req) {
+  const authHeader = String(req.headers['authorization'] || req.headers['Authorization'] || '');
+  if (!authHeader) return null;
+  if (!authHeader.toLowerCase().startsWith('bearer ')) return null;
+  const token = authHeader.slice(7).trim();
+  return token || null;
+}
+
+async function requireMatchingUser(req, expectedUserId) {
+  const token = getBearerToken(req);
+  if (!token || !supabase) return false;
+  try {
+    const { data: authData, error } = await supabase.auth.getUser(token);
+    if (error || !authData?.user?.id) return false;
+    return authData.user.id === expectedUserId;
+  } catch {
+    return false;
   }
 }
 
@@ -1160,6 +1273,190 @@ app.post('/api/auth/signin', (req, res) => {
     res.json({ user: { id: user.id, email: user.email, username: user.username, energy: user.energy, streak: user.streak, token: jwtToken } });
   } catch (err) {
     res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// Local dev auth endpoints for refresh token storage and session refresh.
+// These mirror the serverless /api/auth handler used in production.
+app.post('/api/auth', async (req, res) => {
+  try {
+    const action = String(req.query?.action || '').toLowerCase();
+    const supabaseKey = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_KEY;
+    if (!SUPABASE_URL || !supabaseKey || !supabase) {
+      return res.status(500).json({ message: 'Supabase not configured on server. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.' });
+    }
+    if (!ENC_KEYS.length) {
+      return res.status(500).json({ message: 'Refresh token encryption key missing. Set REFRESH_TOKEN_ENC_KEYS or REFRESH_TOKEN_ENC_KEY.' });
+    }
+
+    if (action === 'store_refresh') {
+      const { userId, refresh_token } = req.body || {};
+      if (!userId || !refresh_token) return res.status(400).json({ message: 'userId and refresh_token required.' });
+
+      const callerMatches = await requireMatchingUser(req, userId);
+      if (!callerMatches) return res.status(401).json({ message: 'Invalid or expired token.' });
+
+      const enc = encryptToken(String(refresh_token));
+      const sid = uuidv4();
+      const { error } = await supabase
+        .from('fitbuddyai_refresh_tokens')
+        .insert([{ session_id: sid, user_id: userId, refresh_token: enc, created_at: new Date().toISOString(), last_used: new Date().toISOString(), revoked: false }]);
+      if (error) {
+        console.error('[authServer] store_refresh failed', error);
+        return res.status(500).json({ message: 'Failed to persist refresh token' });
+      }
+      const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+      res.setHeader('Set-Cookie', `${COOKIE_NAME}=${sid}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${COOKIE_MAX_AGE_SECONDS}${secureFlag}`);
+      return res.json({ ok: true, session_id: sid });
+    }
+
+    if (action === 'refresh') {
+      const cookies = parseCookies(req.headers?.cookie);
+      const sid = cookies[COOKIE_NAME];
+      if (!sid) return res.status(401).json({ message: 'No session cookie present' });
+
+      const { data: entry, error: selectErr } = await supabase
+        .from('fitbuddyai_refresh_tokens')
+        .select('*')
+        .eq('session_id', sid)
+        .limit(1)
+        .maybeSingle();
+      if (selectErr) {
+        console.error('[authServer] refresh select error', selectErr);
+        return res.status(500).json({ message: 'Failed to lookup session' });
+      }
+      const session = entry || null;
+      if (!session || session.revoked) return res.status(401).json({ message: 'Session not found or revoked' });
+      if (session.expires_at && new Date(session.expires_at) < new Date()) {
+        return res.status(401).json({ message: 'Session expired' });
+      }
+
+      let decryptedRefresh = '';
+      try {
+        const decrypted = decryptToken(String(session.refresh_token));
+        decryptedRefresh = decrypted.value;
+        if (decrypted.keyId !== CURRENT_KEY_ID && decryptedRefresh) {
+          try {
+            await supabase
+              .from('fitbuddyai_refresh_tokens')
+              .update({ refresh_token: encryptToken(decryptedRefresh), last_used: new Date().toISOString() })
+              .eq('session_id', sid);
+          } catch (e) {
+            console.warn('[authServer] refresh key rotation failed', e);
+          }
+        }
+      } catch (e) {
+        console.error('[authServer] failed to decrypt refresh token', e);
+        try { await supabase.from('fitbuddyai_refresh_tokens').update({ revoked: true }).eq('session_id', sid); } catch {}
+        return res.status(401).json({ message: 'Invalid session' });
+      }
+
+      const tokenUrl = `${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`;
+      const resp = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`
+        },
+        body: JSON.stringify({ refresh_token: decryptedRefresh })
+      });
+      const body = await resp.json();
+      if (!resp.ok) {
+        console.warn('[authServer] refresh token exchange failed', body);
+        try { await supabase.from('fitbuddyai_refresh_tokens').update({ revoked: true }).eq('session_id', sid); } catch {}
+        return res.status(401).json({ message: 'Failed to refresh token' });
+      }
+
+      try {
+        const updates = { last_used: new Date().toISOString() };
+        if (body.refresh_token) updates.refresh_token = encryptToken(body.refresh_token);
+        await supabase.from('fitbuddyai_refresh_tokens').update(updates).eq('session_id', sid);
+      } catch (e) {
+        console.warn('[authServer] refresh token record update failed', e);
+      }
+
+      let userId = null;
+      try {
+        const { data: userData, error: userErr } = await supabase.auth.getUser(body.access_token);
+        if (!userErr && userData?.user?.id) userId = userData.user.id;
+      } catch {
+        // ignore
+      }
+
+      return res.json({ access_token: body.access_token, expires_at: body.expires_at ?? body.expires_in, user_id: userId });
+    }
+
+    if (action === 'clear_refresh') {
+      const cookies = parseCookies(req.headers?.cookie);
+      const sid = cookies[COOKIE_NAME];
+      if (sid) {
+        try { await supabase.from('fitbuddyai_refresh_tokens').update({ revoked: true }).eq('session_id', sid); } catch {}
+      }
+      res.setHeader('Set-Cookie', `${COOKIE_NAME}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax`);
+      return res.json({ ok: true });
+    }
+
+    if (action === 'create_profile') {
+      const { id, email, username } = req.body || {};
+      if (!id || !email || !username) return res.status(400).json({ message: 'id, email and username required.' });
+      const normalizedEmail = String(email).trim().toLowerCase();
+      try {
+        const { data: byId } = await supabase
+          .from('fitbuddyai_userdata')
+          .select('*')
+          .eq('user_id', id)
+          .limit(1)
+          .maybeSingle();
+        if (byId && byId.user_id) {
+          const updates = { email: normalizedEmail, username };
+          const { error: updateErr } = await supabase.from('fitbuddyai_userdata').update(updates).eq('user_id', id);
+          if (updateErr) return res.status(500).json({ message: 'Failed to update profile.' });
+          return res.status(200).json({ ok: true, reused: true });
+        }
+
+        const { data: existing } = await supabase
+          .from('fitbuddyai_userdata')
+          .select('*')
+          .ilike('email', normalizedEmail)
+          .limit(1)
+          .maybeSingle();
+        if (existing && existing.user_id) {
+          const updates = { email: normalizedEmail, username, user_id: id };
+          const { error: updateErr } = await supabase.from('fitbuddyai_userdata').update(updates).eq('user_id', existing.user_id);
+          if (updateErr) return res.status(500).json({ message: 'Failed to migrate existing profile.' });
+          return res.status(200).json({ ok: true, reused: true });
+        }
+
+        const userRow = {
+          user_id: id,
+          email: normalizedEmail,
+          username,
+          avatar: '',
+          energy: 100,
+          streak: 0,
+          inventory: [],
+          accepted_privacy: false,
+          accepted_terms: false,
+          chat_history: [],
+          workout_plan: null,
+          questionnaire_progress: null,
+          banned: false,
+          role: 'basic_member'
+        };
+        const { error: uErr } = await supabase.from('fitbuddyai_userdata').insert(userRow);
+        if (uErr) return res.status(500).json({ message: 'Failed to create profile.' });
+        return res.status(200).json({ ok: true });
+      } catch (e) {
+        console.error('[authServer] create_profile error', e);
+        return res.status(500).json({ message: 'Failed to create profile.' });
+      }
+    }
+
+    return res.status(404).json({ message: 'Not found' });
+  } catch (err) {
+    console.error('[authServer] /api/auth error', err);
+    return res.status(500).json({ message: 'Server error' });
   }
 });
 

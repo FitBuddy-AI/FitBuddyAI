@@ -1,7 +1,7 @@
 // Buy a shop item and update user on server and localStorage
 import attachAuthHeaders from './apiAuth';
 import { supabase } from './supabaseClient';
-import { saveUserData, saveAuthToken, clearAuthToken, loadUserData, clearUserData } from './localStorage';
+import { saveUserData, clearAuthToken, loadUserData, clearUserData } from './localStorage';
 import { ensureUserId } from '../utils/userHelpers';
 
 const DEFAULT_ENERGY = 10000;
@@ -116,9 +116,8 @@ export async function signIn(email: string, password: string): Promise<User> {
       }
       throw new Error(msg);
     }
-    // Store token and user for attachAuthHeaders/local usage
+    // Session data (token is kept in memory only, not in storage)
     const session = result.data.session;
-    const token = session?.access_token ?? null;
     const user = result.data.user as any;
     // Determine username: prefer user_metadata.username, else fallback to email temporarily
     let usernameVal = (user.user_metadata && user.user_metadata.username) || null;
@@ -147,8 +146,10 @@ export async function signIn(email: string, password: string): Promise<User> {
   // Clear any cross-tab 'no auto restore' guard set during sign-out so sign-in can persist data
   try { sessionStorage.removeItem('fitbuddyai_no_auto_restore'); } catch {}
   try { localStorage.removeItem('fitbuddyai_no_auto_restore'); } catch {}
-  try { saveUserData({ data: toSave.data, token }, { skipBackup: true, forceSave: true } as any); } catch { /* ignore */ }
-  try { if (token) saveAuthToken(token); } catch {}
+  // Save user profile data only (not the token) to localStorage
+  // The access token is kept in memory in App.tsx state or via server-side refresh
+  try { saveUserData({ data: toSave.data }, { skipBackup: true, forceSave: true } as any); } catch { /* ignore */ }
+  // DO NOT store the access token in sessionStorage — it's a security risk
 
     // Ensure Supabase user metadata includes a display name / username for this user.
     try {
@@ -254,8 +255,9 @@ export async function signUp(email: string, username: string, password: string):
   }
   const data = await res.json();
   if (data.user) {
-  // Persist signup user data; token isn't issued on signup in current API
-  const toSave = { data: data.user, token: data.token ?? null };
+  // Persist signup user data only (not the token)
+  // Access tokens are kept in memory or via server-side refresh
+  const toSave = { data: data.user };
   // forceSave to ensure persistence even if a guard flag is set
   try { saveUserData(toSave, { skipBackup: true, forceSave: true } as any); } catch { /* ignore */ }
   }
@@ -270,18 +272,56 @@ export async function signInWithGoogle(): Promise<void> {
   const useSupabase = Boolean(import.meta.env.VITE_LOCAL_USE_SUPABASE || import.meta.env.VITE_SUPABASE_URL);
   if (useSupabase) {
     try {
-      // Prefer an explicit public app URL (so Supabase redirects back to your
-      // branded domain after it finishes the provider exchange). If you set
-      // VITE_PUBLIC_APP_URL in your .env (for example https://app.fitbuddyai.com)
-      // Supabase will redirect there after handling the OAuth callback.
-  // Build an explicit redirectTo that points back to the exact page the
-  // user started the flow from. Supabase will redirect the browser back to
-  // this URL after it finishes the provider exchange.
-  const envPublic = (import.meta.env.VITE_PUBLIC_APP_URL && String(import.meta.env.VITE_PUBLIC_APP_URL).trim()) || '';
-  const currentFullUrl = window.location.origin + window.location.pathname + window.location.search + window.location.hash;
-  const redirectTo = (envPublic && envPublic !== 'PUT_YOUR_PUBLIC_APP_URL_HERE') ? envPublic.replace(/\/$/, '') + window.location.pathname : currentFullUrl;
-  console.log('[authService] initiating Google sign-in, redirectTo=', redirectTo);
-  await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
+      // Always redirect to /signin so callback handling is deterministic on every route.
+      const envPublic = (import.meta.env.VITE_PUBLIC_APP_URL && String(import.meta.env.VITE_PUBLIC_APP_URL).trim()) || '';
+      const baseUrl = (envPublic && envPublic !== 'PUT_YOUR_PUBLIC_APP_URL_HERE')
+        ? envPublic.replace(/\/$/, '')
+        : window.location.origin;
+      const redirectTo = `${baseUrl}/signin`;
+      console.log('[authService] initiating Google sign-in, redirectTo=', redirectTo);
+
+      // Generate PKCE code_verifier and code_challenge and store verifier in sessionStorage
+      const generateVerifier = (len = 128) => {
+        const array = new Uint8Array(len);
+        crypto.getRandomValues(array);
+        // Base64-url encode
+        const str = Array.from(array).map(b => String.fromCharCode(b)).join('');
+        const base64 = btoa(str);
+        return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      };
+
+      const sha256 = async (s: string) => {
+        const enc = new TextEncoder();
+        const data = enc.encode(s);
+        const hash = await crypto.subtle.digest('SHA-256', data);
+        const bytes = new Uint8Array(hash);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+        const b64 = btoa(binary);
+        return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      };
+
+      const codeVerifier = generateVerifier(64);
+      const codeChallenge = await sha256(codeVerifier);
+
+      // Store the verifier under the same key the Supabase client uses.
+      // storageKey default is: sb-${projectRef}-auth-token
+      const supabaseBase = (import.meta.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').replace(/\/$/, '');
+      if (!supabaseBase) throw new Error('Supabase URL not configured');
+      let storageKey = '';
+      try {
+        const host = new URL(supabaseBase).hostname;
+        const projectRef = host.split('.')[0];
+        storageKey = `sb-${projectRef}-auth-token`;
+      } catch (_e) {
+        storageKey = 'sb-unknown-auth-token';
+      }
+      const verifierKey = `${storageKey}-code-verifier`;
+      try { sessionStorage.setItem(verifierKey, codeVerifier); } catch (_e) { console.warn('Failed to set PKCE code_verifier in sessionStorage', _e); }
+
+      // Build Supabase authorize URL with PKCE
+      const authUrl = `${supabaseBase}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}&response_type=code&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
+      window.location.href = authUrl;
       return;
     } catch (e) {
       console.warn('[authService] Google sign-in failed', e);
@@ -332,26 +372,25 @@ export function getCurrentUser(): User | null {
 export async function signOutAndRevoke(timeoutMs = 2000): Promise<void> {
   try {
     const revokeUrl = '/api/auth?action=clear_refresh';
-    let revoked = false;
+    // Always attempt a credentials-included fetch to clear server-side refresh cookie
+    // and revoke the stored refresh token. sendBeacon does not include credentials
+    // and therefore cannot be relied upon to clear authenticated cookies.
     try {
-      if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
-        const blob = new Blob([JSON.stringify({})], { type: 'application/json' });
-        try { revoked = navigator.sendBeacon(revokeUrl, blob); } catch { revoked = false; }
-      }
-    } catch {
-      revoked = false;
+      await Promise.race([
+        fetch(revokeUrl, { method: 'POST', credentials: 'include' }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('revoke_timeout')), timeoutMs))
+      ]);
+    } catch (e) {
+      console.warn('[authService] signOut: clear_refresh request failed or timed out', e);
     }
 
-    if (!revoked) {
-      try {
-        await Promise.race([
-          fetch(revokeUrl, { method: 'POST', credentials: 'include' }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('revoke_timeout')), timeoutMs))
-        ]);
-      } catch (e) {
-        console.warn('[authService] signOut: clear_refresh request failed or timed out', e);
+    // Also fire a best-effort sendBeacon so other tabs receive the notification
+    // even if the fetch above completes; do not treat sendBeacon as authoritative.
+    try {
+      if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+        try { navigator.sendBeacon(revokeUrl, new Blob([JSON.stringify({})], { type: 'application/json' })); } catch {}
       }
-    }
+    } catch {}
   } catch (e) {
     console.warn('[authService] signOut: revoke attempt failed', e);
   }

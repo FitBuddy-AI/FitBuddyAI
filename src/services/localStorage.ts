@@ -19,9 +19,6 @@ const STORAGE_KEYS = {
   HOME_INTRO_ENABLED: 'fitbuddyai_home_intro_enabled',
   SUPABASE_SESSION: 'fitbuddyai_supabase_session'
 };
-const AUTH_KEYS = {
-  TOKEN: 'fitbuddyai_token',
-};
 // Auto-backup: import cloud backup helper and provide a debounced scheduler
 import { backupUserDataToServer } from './cloudBackupService';
 import { ensureUserId } from '../utils/userHelpers';
@@ -176,21 +173,18 @@ export const saveUserData = (userData: any, opts?: { skipBackup?: boolean }): vo
     // Accept either a raw user object or a wrapper { data, token }
     const toStore: any = {};
     if (userData && typeof userData === 'object' && ('data' in userData || 'token' in userData)) {
-      // Already wrapped: only persist the non-sensitive user profile into localStorage
+      // Already wrapped: only persist the non-sensitive user profile
       toStore.data = userData.data || null;
-      // If a token was provided, move it into sessionStorage via helper (do not persist token into localStorage)
-      if ('token' in userData && userData.token) {
-        try { sessionStorage.setItem(AUTH_KEYS.TOKEN, String(userData.token)); } catch {}
-      }
+      // NOTE: Do NOT store tokens in sessionStorage/localStorage — tokens are kept in memory and refreshed from server.
     } else {
       toStore.data = userData || null;
     }
     toStore.data = ensureUserId(toStore.data);
     const payload = { ...toStore, timestamp: Date.now() };
-    // Persist unified user payload in sessionStorage only (do not store sensitive user payload in localStorage)
+    // Persist unified user payload in sessionStorage only (cleared on sign-out)
     try { sessionStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(payload)); } catch {}
-    // Also persist a non-sensitive copy in localStorage so reloads can restore the session
-    try { localStorage.setItem(STORAGE_KEYS.USER_DATA_PERSISTED, JSON.stringify(payload)); } catch {}
+    try { localStorage.removeItem(STORAGE_KEYS.USER_DATA); } catch {}
+    try { localStorage.removeItem(STORAGE_KEYS.USER_DATA_PERSISTED); } catch {}
     // Broadcast to other tabs so they can sync via BroadcastChannel
     try {
       const bc = new BroadcastChannel('fitbuddyai');
@@ -209,15 +203,7 @@ export const saveUserData = (userData: any, opts?: { skipBackup?: boolean }): vo
 
 export const loadUserData = (): any | null => {
   try {
-    let saved = sessionStorage.getItem(STORAGE_KEYS.USER_DATA);
-    // If sessionStorage is empty, fall back to persisted localStorage copy and rehydrate sessionStorage
-    if (!saved) {
-      const persisted = localStorage.getItem(STORAGE_KEYS.USER_DATA_PERSISTED);
-      if (persisted) {
-        saved = persisted;
-        try { sessionStorage.setItem(STORAGE_KEYS.USER_DATA, persisted); } catch {}
-      }
-    }
+    const saved = sessionStorage.getItem(STORAGE_KEYS.USER_DATA);
     if (!saved) return null;
     
     const { data, timestamp } = JSON.parse(saved);
@@ -238,14 +224,50 @@ export const loadUserData = (): any | null => {
 
 export const clearUserData = (): void => {
   try {
+    // Remove canonical user payloads and session data
     try { sessionStorage.removeItem(STORAGE_KEYS.USER_DATA); } catch {}
-    try { localStorage.removeItem(STORAGE_KEYS.USER_DATA_PERSISTED); } catch {}
-    try { sessionStorage.removeItem(AUTH_KEYS.TOKEN); } catch {}
+    try { sessionStorage.removeItem(STORAGE_KEYS.WORKOUT_PLAN); } catch {}
+    try { localStorage.removeItem(STORAGE_KEYS.USER_DATA); } catch {}
+    try { localStorage.removeItem(STORAGE_KEYS.WORKOUT_PLAN); } catch {}
+    try { localStorage.removeItem(STORAGE_KEYS.USER_DATA_PERSISTED); } catch {}  // deprecated, but clear if exists
+    // Remove persisted supabase session helper and auth token
+    try { localStorage.removeItem(STORAGE_KEYS.SUPABASE_SESSION); } catch {}
+    try { clearAuthToken(); } catch {}
+    try { sessionStorage.removeItem('fitbuddyai_chat_anon'); } catch {}
+    try { localStorage.removeItem('fitbuddyai_chat_anon'); } catch {}
+
+    // Remove known FitBuddyAI keys that may be left behind by various components
+    const removeIfExists = (key: string) => {
+      try { sessionStorage.removeItem(key); } catch {}
+      try { localStorage.removeItem(key); } catch {}
+    };
+    const knownPrefixes = ['fitbuddyai_chat_', 'fitbuddyai_last_plan_id', 'fitbuddyai_calendar_last_date', 'fitbuddyaiUsername', 'fitbuddyai_supabase_session'];
+    for (const prefix of knownPrefixes) removeIfExists(prefix);
+    // Sweep keys for chat entries (fitbuddyai_chat_<id>)
+    try {
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const k = sessionStorage.key(i);
+        if (k && k.startsWith('fitbuddyai_chat_')) {
+          try { sessionStorage.removeItem(k); } catch {}
+        }
+      }
+    } catch {}
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('fitbuddyai_chat_')) {
+          try { localStorage.removeItem(k); } catch {}
+        }
+      }
+    } catch {}
     // No user -> nothing to back up, but clear any pending timer
     if (backupTimeout) {
       clearTimeout(backupTimeout);
       backupTimeout = null;
     }
+    // Clear auth token helper
+    try { clearAuthToken(); } catch {}
+
     // Broadcast clear event
     try { const bc = new BroadcastChannel('fitbuddyai'); bc.postMessage({ type: 'user-clear', timestamp: Date.now() }); bc.close(); } catch {}
   } catch (error) {
@@ -276,7 +298,8 @@ export const saveHomeIntroEnabled = (enabled: boolean): void => {
 export const saveAuthToken = (token: string | null) => {
   try {
     if (!token) return;
-    sessionStorage.setItem(AUTH_KEYS.TOKEN, String(token));
+    // Do NOT persist access tokens to storage in cleartext. Keep tokens in-memory only.
+    try { (window as any).fitbuddyai_access_token = String(token); } catch {}
   } catch (e) {
     // ignore
   }
@@ -284,16 +307,16 @@ export const saveAuthToken = (token: string | null) => {
 
 export const getAuthToken = (): string | null => {
   try {
-    const t = sessionStorage.getItem(AUTH_KEYS.TOKEN);
-    if (t) return t;
-    return null;
+    // Prefer in-memory token; do not read tokens from persistent storage.
+    const t = (window as any).fitbuddyai_access_token;
+    return t || null;
   } catch (e) {
     return null;
   }
 };
 
 export const clearAuthToken = () => {
-  try { sessionStorage.removeItem(AUTH_KEYS.TOKEN); } catch {}
+  try { (window as any).fitbuddyai_access_token = null; } catch {}
 };
 
 export const saveSupabaseSession = (session: any | null) => {
@@ -385,18 +408,19 @@ export const saveWorkoutPlan = (workoutPlan: any): void => {
     const normalized = normalizePlanForStorage(workoutPlan);
     const payload = { data: normalized, timestamp: Date.now() };
     const serialized = JSON.stringify(payload);
-    // Write to localStorage
-    localStorage.setItem(STORAGE_KEYS.WORKOUT_PLAN, serialized);
+    // Write to sessionStorage (cleared on sign-out)
+    sessionStorage.setItem(STORAGE_KEYS.WORKOUT_PLAN, serialized);
+    try { localStorage.removeItem(STORAGE_KEYS.WORKOUT_PLAN); } catch {}
 
     // Verify round-trip parse to detect any truncation or invalid JSON
     try {
-      const round = localStorage.getItem(STORAGE_KEYS.WORKOUT_PLAN);
+      const round = sessionStorage.getItem(STORAGE_KEYS.WORKOUT_PLAN);
       if (!round) throw new Error('Written value missing');
       JSON.parse(round);
     } catch (e) {
       // If verification fails, remove the bad entry and warn
       console.warn('Workout plan verification failed after save; removing corrupted key.', e);
-      try { localStorage.removeItem(STORAGE_KEYS.WORKOUT_PLAN); } catch {}
+      try { sessionStorage.removeItem(STORAGE_KEYS.WORKOUT_PLAN); } catch {}
       return;
     }
 
@@ -414,7 +438,7 @@ export const saveWorkoutPlan = (workoutPlan: any): void => {
 
 export const loadWorkoutPlan = (): any | null => {
   try {
-  const saved = localStorage.getItem(STORAGE_KEYS.WORKOUT_PLAN);
+  const saved = sessionStorage.getItem(STORAGE_KEYS.WORKOUT_PLAN);
   if (!saved) return null;
   console.log('[localStorage] loadWorkoutPlan -> raw length:', saved.length);
 
@@ -438,7 +462,8 @@ export const loadWorkoutPlan = (): any | null => {
 
 export const clearWorkoutPlan = (): void => {
   try {
-    localStorage.removeItem(STORAGE_KEYS.WORKOUT_PLAN);
+    sessionStorage.removeItem(STORAGE_KEYS.WORKOUT_PLAN);
+    try { localStorage.removeItem(STORAGE_KEYS.WORKOUT_PLAN); } catch {}
     scheduleBackup();
     try {
       if (typeof window !== 'undefined') {

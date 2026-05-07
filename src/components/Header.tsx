@@ -492,11 +492,11 @@ const Header: React.FC<HeaderProps> = ({ profileVersion, userData }) => {
                     {isSignedIn && (
                       <div className="explore-profile-counters">
                         <div className="header-counter streak">
-                          <Flame size={18} color="#ffb347" style={{ marginRight: 4 }} />
+                          <Flame size={18} color="#ffb347" className="icon-gap" />
                           <span className="counter-value">{currentUser?.streak ?? 0}</span>
                         </div>
                         <div className="header-counter energy">
-                          <Sparkles size={18} color="#1e90cb" style={{ marginRight: 4 }} />
+                          <Sparkles size={18} color="#1e90cb" className="icon-gap" />
                           <span className="counter-value">{currentUser?.energy ?? 0}</span>
                         </div>
                       </div>
@@ -584,11 +584,11 @@ const Header: React.FC<HeaderProps> = ({ profileVersion, userData }) => {
             <>
               <div className="header-counters">
                 <div className="header-counter streak">
-                  <Flame size={20} color="#ffb347" style={{ marginRight: 4 }} />
+                  <Flame size={20} color="#ffb347" className="icon-gap" />
                   <span className="counter-value">{currentUser?.streak ?? 0}</span>
                 </div>
                 <div className="header-counter energy">
-                  <Sparkles size={20} color="#1e90cb" style={{ marginRight: 4 }} />
+                  <Sparkles size={20} color="#1e90cb" className="icon-gap" />
                   <span className="counter-value">{currentUser?.energy ?? 0}</span>
                 </div>
               </div>

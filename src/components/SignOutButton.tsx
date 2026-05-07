@@ -1,50 +1,64 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
-import { signOut } from '../services/authService';
-import { clearUserData, clearQuestionnaireProgress, clearAuthToken, loadUserData } from '../services/localStorage';
-import { backupUserDataToServer, backupAndDeleteSensitive } from '../services/cloudBackupService';
+import { supabase } from '../services/supabaseClient';
 import './SignOutButton.css';
 
 const SignOutButton: React.FC = () => {
-  const navigate = useNavigate();
   const handleSignOut = async () => {
-  // Mirror Header sign-out behavior: set cross-tab no-auto-restore
-  try { localStorage.setItem('fitbuddyai_no_auto_restore', '1'); } catch {}
-  try { sessionStorage.setItem('fitbuddyai_no_auto_restore', '1'); } catch {}
-
-  const userId = (() => {
+    console.log('[SignOutButton] Sign out initiated');
+    
+    // First, tell Supabase to revoke the current session (this signs out the Supabase user)
     try {
-      const parsed = loadUserData();
-      return parsed?.id || parsed?.sub || parsed?.data?.id || null;
-    } catch (_e) {
-      return null;
+      console.log('[SignOutButton] Calling supabase.auth.signOut()...');
+      await supabase.auth.signOut();
+      console.log('[SignOutButton] Supabase session revoked');
+    } catch (e) {
+      console.warn('[SignOutButton] supabase.auth.signOut() failed', e);
     }
-  })();
+    
+    // Clear in-memory access token
+    if (typeof window !== 'undefined') {
+      (window as any).fitbuddyai_access_token = null;
+      (window as any).fitbuddyai_token_expires = null;
+    }
+    
+    // Then, revoke our server-side refresh token with explicit credentials
+    try {
+      console.log('[SignOutButton] Calling clear_refresh endpoint...');
+      const clearRes = await Promise.race([
+        fetch('/api/auth?action=clear_refresh', { 
+          method: 'POST', 
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' }
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+      ]) as Response;
+      
+      console.log('[SignOutButton] clear_refresh responded:', clearRes.status);
+      
+      if (!clearRes.ok) {
+        console.warn('[SignOutButton] clear_refresh returned non-ok status', clearRes.status);
+      }
+    } catch (e) {
+      console.warn('[SignOutButton] clear_refresh failed (continuing anyway)', e);
+    }
 
-  if (userId) {
-    try { await backupAndDeleteSensitive(String(userId)); } catch {}
-    try { await backupUserDataToServer(String(userId)); } catch {}
-  }
+    // Small delay to ensure all revocation requests are processed
+    await new Promise(resolve => setTimeout(resolve, 500));
 
-  // Immediately clear auth token and user data so no other listeners can re-persist them
-  try { clearAuthToken(); } catch {}
-  try { clearUserData(); } catch {}
-  try { clearQuestionnaireProgress(); } catch {}
-  // Also call legacy signOut to remove any auth cookies/local keys (non-blocking)
-  try { signOut(); } catch {}
-
-  // Notify app early to prevent other parts from re-saving user data
-  try { window.dispatchEvent(new Event('fitbuddyai-logout')); } catch {}
-  navigate('/signin');
-
-  // Clear the 'no auto restore' guard after a short timeout so normal saves resume
-  try {
-    setTimeout(() => {
-      try { sessionStorage.removeItem('fitbuddyai_no_auto_restore'); } catch {}
-      try { localStorage.removeItem('fitbuddyai_no_auto_restore'); } catch {}
-    }, 3000);
-  } catch (_e) {}
+    console.log('[SignOutButton] Clearing all storage...');
+    // Clear all client storage
+    try { sessionStorage.clear(); } catch {}
+    try { localStorage.clear(); } catch {}
+    
+    console.log('[SignOutButton] Dispatching logout event...');
+    // Dispatch logout event
+    try { window.dispatchEvent(new Event('fitbuddyai-logout')); } catch {}
+    
+    console.log('[SignOutButton] Reloading page...');
+    // Reload page
+    try { window.location.reload(); } catch { window.location.href = '/'; }
   };
+  
   return (
     <button className="btn signout-btn" onClick={handleSignOut}>
       Sign Out

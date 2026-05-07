@@ -318,7 +318,15 @@ export default async function handler(req: any, res: any) {
           console.warn('[api/auth/refresh] failed to update refresh token record', e);
         }
 
-        return res.json({ access_token: body.access_token, expires_at: body.expires_at ?? body.expires_in });
+        let userId: string | null = null;
+        try {
+          const { data: userData, error: userErr } = await supabase.auth.getUser(body.access_token);
+          if (!userErr && userData?.user?.id) userId = userData.user.id;
+        } catch {
+          // ignore
+        }
+
+        return res.json({ access_token: body.access_token, expires_at: body.expires_at ?? body.expires_in, user_id: userId });
       } catch (e) {
         console.error('[api/auth/refresh] error', e);
         return res.status(500).json({ message: 'Refresh failed' });
@@ -406,6 +414,24 @@ export default async function handler(req: any, res: any) {
       if (!id || !email || !username) return res.status(400).json({ message: 'id, email and username required.' });
       const normalizedEmail = normalizeEmail(email);
       try {
+        // If a row already exists for this user_id, update any missing fields.
+        const { data: byId } = await supabase
+          .from('fitbuddyai_userdata')
+          .select('*')
+          .eq('user_id', id)
+          .limit(1)
+          .maybeSingle();
+        if (byId && byId.user_id) {
+          const updates: any = { email: normalizedEmail };
+          if (username && (!byId.username || byId.username !== username)) updates.username = username;
+          const { error: updateError } = await supabase.from('fitbuddyai_userdata').update(updates).eq('user_id', id);
+          if (updateError) {
+            console.warn('[api/auth/create_profile] failed to update existing profile', updateError);
+            return res.status(500).json({ message: 'Failed to update profile.' });
+          }
+          return res.status(200).json({ ok: true, reused: true });
+        }
+
         // Try to reuse existing profile for this email before creating a new one.
         const { data: existing } = await supabase
           .from('fitbuddyai_userdata')

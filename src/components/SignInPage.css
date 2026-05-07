@@ -250,3 +250,9 @@
     font-size: 0.86rem;
   }
 }
+
+/* Wrapper for the Google identity button to avoid inline styles */
+.google-identity-wrapper {
+  max-width: 360px;
+  margin: 12px auto;
+}

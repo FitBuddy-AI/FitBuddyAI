@@ -11,41 +11,41 @@ if (!supabaseUrl || !supabaseAnonKey) {
 	throw new Error('Supabase URL and Key are required.');
 }
 
-const sessionStorageAdapter = {
-	getItem: (key: string) => {
-		if (typeof window === 'undefined') return null;
-		try {
-			return window.sessionStorage.getItem(key);
-		} catch {
-			return null;
-		}
-	},
-	setItem: (key: string, value: string) => {
-		if (typeof window === 'undefined') return;
-		try {
-			window.sessionStorage.setItem(key, value);
-		} catch {
-			// no-op
-		}
-	},
-	removeItem: (key: string) => {
-		if (typeof window === 'undefined') return;
-		try {
-			window.sessionStorage.removeItem(key);
-		} catch {
-			// no-op
-		}
+// Store only the PKCE verifier in sessionStorage. Ignore all other keys so
+// access/refresh tokens are never persisted to web storage.
+const pkceOnlyStorage = (() => {
+	if (typeof window === 'undefined' || !window.sessionStorage) {
+		return {
+			getItem: () => null,
+			setItem: () => {},
+			removeItem: () => {}
+		};
 	}
-};
+	return {
+		getItem: (key: string) => {
+			if (key.endsWith('-code-verifier')) return window.sessionStorage.getItem(key);
+			return null;
+		},
+		setItem: (key: string, value: string) => {
+			if (key.endsWith('-code-verifier')) {
+				window.sessionStorage.setItem(key, value);
+			}
+		},
+		removeItem: (key: string) => {
+			if (key.endsWith('-code-verifier')) {
+				window.sessionStorage.removeItem(key);
+			}
+		}
+	};
+})();
 
-// Persist Supabase sessions only in sessionStorage (not localStorage) and
-// use PKCE for OAuth to avoid returning raw access tokens in URL fragments.
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 	auth: {
+		// Keep sessions in memory only, but allow PKCE verifier storage.
 		persistSession: true,
-		autoRefreshToken: true,
-		detectSessionInUrl: true,
+		autoRefreshToken: false,
+		detectSessionInUrl: false,
 		flowType: 'pkce',
-		storage: sessionStorageAdapter
+		storage: pkceOnlyStorage
 	}
 });

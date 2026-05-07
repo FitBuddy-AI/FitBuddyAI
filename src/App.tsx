@@ -179,12 +179,14 @@ function App() {
           } catch {}
         }
       } else {
-        // Only call clear_refresh if the sign-out was initiated by the user.
+        // Refresh-token revocation is handled by the explicit sign-out flow
+        // before supabase.auth.signOut() is called. Avoid duplicating the
+        // clear_refresh request here when the auth state later becomes null.
         let userInitiated = false;
         try { userInitiated = Boolean((window as any).__fitbuddyai_user_signout_initiated); } catch {}
         if (userInitiated) {
-          console.debug('[App] supabase auth state change: user-initiated sign-out — calling clear_refresh');
-          try { fetch('/api/auth?action=clear_refresh', { method: 'POST', credentials: 'include' }).catch(() => {}); } catch {}
+          console.debug('[App] supabase auth state change: user-initiated sign-out — clear_refresh already handled by signOutAndRevoke');
+          try { delete (window as any).__fitbuddyai_user_signout_initiated; } catch {}
         } else {
           console.debug('[App] supabase auth state change: session is null but not user-initiated — skipping clear_refresh');
         }

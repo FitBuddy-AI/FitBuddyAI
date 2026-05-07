@@ -270,7 +270,7 @@ export default async function handler(req: any, res: any) {
 
     if (action === 'refresh') {
       try {
-        console.debug('[api/auth/refresh] incoming request headers cookie:', req.headers?.cookie);
+        console.debug('[api/auth/refresh] incoming request has cookie header:', Boolean(req.headers?.cookie));
         const cookies = parseCookies(req.headers?.cookie as string | undefined);
         const sid = cookies[COOKIE_NAME];
         if (!sid) return res.status(401).json({ message: 'No session cookie present' });

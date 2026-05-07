@@ -38,7 +38,18 @@ const trimTrailingPunctuation = (value: string) => {
 
 const sanitizeChatFragment = (value: string) => String(value).replace(/[<>]/g, '');
 
-const renderTextFragment = (value: string, key: string) => <span key={key}>{sanitizeChatFragment(value)}</span>;
+const SafeText = ({ value, className }: { value: string; className?: string }) => {
+  const spanRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!spanRef.current) return;
+    spanRef.current.textContent = sanitizeChatFragment(value);
+  }, [value]);
+
+  return <span ref={spanRef} className={className} />;
+};
+
+const renderTextFragment = (value: string, key: string) => <SafeText key={key} value={value} />;
 
 const renderChatText = (text: string) => {
   const output: Array<React.ReactNode> = [];
@@ -79,12 +90,12 @@ const renderChatText = (text: string) => {
       // Safe href: create a clickable link
       output.push(
         isInternalChatLink(href) ? (
-          <Link key={key} to={href} className="msg-link">
-            {displayText}
+          <Link key={key} to={href} className="msg-link" aria-label={sanitizeChatFragment(displayText)} title={sanitizeChatFragment(displayText)}>
+            <SafeText value={displayText} />
           </Link>
         ) : (
-          <a key={key} href={href} target="_blank" rel="noopener noreferrer" className="msg-link">
-            {displayText}
+          <a key={key} href={href} target="_blank" rel="noopener noreferrer" className="msg-link" aria-label={sanitizeChatFragment(displayText)} title={sanitizeChatFragment(displayText)}>
+            <SafeText value={displayText} />
           </a>
         )
       );

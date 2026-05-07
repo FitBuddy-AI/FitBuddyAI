@@ -25,6 +25,23 @@ import { ensureUserId } from '../utils/userHelpers';
 
 let userDataCache: { data: any; timestamp: number } | null = null;
 
+const getStoredUserDataSnapshot = (): { data: any; timestamp: number } | null => {
+  try {
+    if (userDataCache) return userDataCache;
+    if (typeof window === 'undefined') return null;
+    const fallback = (window as any).fitbuddyai_user_data;
+    if (!fallback || typeof fallback !== 'object') return null;
+    const data = (fallback as any).data ?? fallback;
+    if (!data) return null;
+    return {
+      data,
+      timestamp: Number((fallback as any).timestamp || 0) || 0
+    };
+  } catch {
+    return null;
+  }
+};
+
 const purgeLegacyUserStorage = () => {
   try { sessionStorage.removeItem(STORAGE_KEYS.USER_DATA); } catch {}
   try { localStorage.removeItem(STORAGE_KEYS.USER_DATA); } catch {}
@@ -33,7 +50,7 @@ const purgeLegacyUserStorage = () => {
 
 export const getUserDataTimestamp = (): number => {
   try {
-    return userDataCache?.timestamp || 0;
+    return getStoredUserDataSnapshot()?.timestamp || 0;
   } catch {
     return 0;
   }
@@ -202,7 +219,7 @@ export const saveUserData = (userData: any, opts?: { skipBackup?: boolean }): vo
 
 export const loadUserData = (): any | null => {
   try {
-    const cached = userDataCache || ((window as any)?.fitbuddyai_user_data || null);
+    const cached = getStoredUserDataSnapshot();
     if (!cached || !cached.data) return null;
     return ensureUserId(cached.data);
   } catch (error) {

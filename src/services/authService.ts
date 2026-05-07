@@ -148,7 +148,7 @@ export async function signIn(email: string, password: string): Promise<User> {
   try { localStorage.removeItem('fitbuddyai_no_auto_restore'); } catch {}
   // Save user profile data only (not the token) to localStorage
   // The access token is kept in memory in App.tsx state or via server-side refresh
-  try { saveUserData({ data: toSave.data }, { skipBackup: true, forceSave: true } as any); } catch { /* ignore */ }
+  try { saveUserData({ data: toSave.data }, { skipBackup: true }); } catch { /* ignore */ }
   // DO NOT store the access token in sessionStorage — it's a security risk
 
     // Ensure Supabase user metadata includes a display name / username for this user.
@@ -180,8 +180,7 @@ export async function signIn(email: string, password: string): Promise<User> {
     const nextEnergy = data.user.energy ?? DEFAULT_ENERGY;
     const nextUser = { ...data.user, energy: nextEnergy };
     const toSave = { data: nextUser, token: data.token ?? null };
-    // forceSave to bypass any temporary guards (e.g., from a calendar clear) so reloads stay signed in
-    try { saveUserData(toSave, { skipBackup: true, forceSave: true } as any); } catch { /* ignore */ }
+    try { saveUserData(toSave, { skipBackup: true }); } catch { /* ignore */ }
   }
   return { ...data.user, energy: data.user.energy ?? DEFAULT_ENERGY };
 }
@@ -219,7 +218,7 @@ export async function signUp(email: string, username: string, password: string):
   if (token && toSave) {
     try { sessionStorage.removeItem('fitbuddyai_no_auto_restore'); } catch {}
     try { localStorage.removeItem('fitbuddyai_no_auto_restore'); } catch {}
-    try { saveUserData({ data: toSave, token }, { skipBackup: true, forceSave: true } as any); } catch { /* ignore */ }
+    try { saveUserData({ data: toSave, token }, { skipBackup: true }); } catch { /* ignore */ }
   }
     // Ensure server-side app_users and user_data rows exist for this new Supabase user (best-effort).
     try {
@@ -258,8 +257,7 @@ export async function signUp(email: string, username: string, password: string):
   // Persist signup user data only (not the token)
   // Access tokens are kept in memory or via server-side refresh
   const toSave = { data: data.user };
-  // forceSave to ensure persistence even if a guard flag is set
-  try { saveUserData(toSave, { skipBackup: true, forceSave: true } as any); } catch { /* ignore */ }
+  try { saveUserData(toSave, { skipBackup: true }); } catch { /* ignore */ }
   }
   return data.user;
 }

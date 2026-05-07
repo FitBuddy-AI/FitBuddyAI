@@ -151,7 +151,7 @@ const SignInPage: React.FC = () => {
         if (!resolvedUser.username) resolvedUser.username = baseProfile.username;
         if (!resolvedUser.avatar) resolvedUser.avatar = baseProfile.avatar;
         // Save user profile data (not the token) — user data is non-sensitive and needed for UI
-        saveUserData({ data: resolvedUser }, { skipBackup: true, forceSave: true } as any);
+        saveUserData({ data: resolvedUser }, { skipBackup: true });
         try { window.dispatchEvent(new Event('fitbuddyai-login')); } catch {}
 
         navigate('/profile', { replace: true });
@@ -195,7 +195,7 @@ const SignInPage: React.FC = () => {
       // (from saving assessment/plan) will run as needed.
         // Save user data (profile only, no token) into the unified user_data object
   const toSave = { data: data.user };
-  try { saveUserData(toSave, { skipBackup: true, forceSave: true } as any); } catch {}
+  try { saveUserData(toSave, { skipBackup: true }); } catch {}
         // Attempt to restore any server-stored questionnaire/workout/assessment data
         try {
           await restoreUserDataFromServer(data.user.id);

@@ -12,9 +12,9 @@ export async function backupUserDataToServer(userId: string) {
   try {
     // Only include keys that actually exist to avoid overwriting server data with nulls
   const payload: any = { userId };
-  if (fitbuddyai_questionnaire_progress != null) payload.fitbuddyai_questionnaire_progress = fitbuddyai_questionnaire_progress;
-  if (fitbuddyai_workout_plan != null) payload.fitbuddyai_workout_plan = fitbuddyai_workout_plan;
-  if (fitbuddyai_assessment_data != null) payload.fitbuddyai_assessment_data = fitbuddyai_assessment_data;
+    if (fitbuddyai_questionnaire_progress != null) payload.questionnaire_progress = fitbuddyai_questionnaire_progress;
+    if (fitbuddyai_workout_plan != null) payload.workout_plan = fitbuddyai_workout_plan;
+    if (fitbuddyai_assessment_data != null) payload.assessment_data = fitbuddyai_assessment_data;
   // include chat history and the user snapshot if present so the server can associate the backup correctly
   if (fitbuddyai_chat != null) payload.chat_history = fitbuddyai_chat;
 
@@ -47,9 +47,9 @@ export function beaconBackupUserData(userId: string) {
     const fitbuddyai_workout_plan = sessionStorage.getItem('fitbuddyai_workout_plan');
     const fitbuddyai_assessment_data = localStorage.getItem('fitbuddyai_assessment_data');
     const payload: any = { userId };
-    if (fitbuddyai_questionnaire_progress != null) payload.fitbuddyai_questionnaire_progress = fitbuddyai_questionnaire_progress;
-    if (fitbuddyai_workout_plan != null) payload.fitbuddyai_workout_plan = fitbuddyai_workout_plan;
-    if (fitbuddyai_assessment_data != null) payload.fitbuddyai_assessment_data = fitbuddyai_assessment_data;
+    if (fitbuddyai_questionnaire_progress != null) payload.questionnaire_progress = fitbuddyai_questionnaire_progress;
+    if (fitbuddyai_workout_plan != null) payload.workout_plan = fitbuddyai_workout_plan;
+    if (fitbuddyai_assessment_data != null) payload.assessment_data = fitbuddyai_assessment_data;
     // Include acceptance flags and streak if present in unified user_data
     try {
       const currentUser = loadUserData();
@@ -98,29 +98,30 @@ export async function restoreUserDataFromServer(userId: string) {
     const payload = raw?.stored ?? raw?.payload ?? raw;
     if (!payload) return;
 
-  const writeMappedIfPresent = (storageKey: string, payloadKeys: string[]) => {
-    const value = payloadKeys
-      .map((key) => payload[key])
-      .find((candidate) => candidate !== undefined && candidate !== null);
+    const writeMappedIfPresent = (storageKey: string, payloadKeys: string[]) => {
+      const value = payloadKeys
+        .map((key) => payload[key])
+        .find((candidate) => candidate !== undefined && candidate !== null);
 
-    if (value === undefined || value === null) return;
+      if (value === undefined || value === null) return;
+
+      try {
+        const toStore = typeof value === 'string' ? value : JSON.stringify(value);
+        if (storageKey === 'fitbuddyai_workout_plan') {
+          try { sessionStorage.setItem(storageKey, toStore); } catch {}
+        } else {
+          try { localStorage.setItem(storageKey, toStore); } catch {}
+        }
+      } catch (_e) {
+        // ignore serialization/storage errors during restore
+      }
+    };
+
+    writeMappedIfPresent('fitbuddyai_questionnaire_progress', ['questionnaire_progress', 'fitbuddyai_questionnaire_progress']);
+    writeMappedIfPresent('fitbuddyai_workout_plan', ['workout_plan', 'fitbuddyai_workout_plan']);
+    writeMappedIfPresent('fitbuddyai_assessment_data', ['assessment_data', 'fitbuddyai_assessment_data']);
 
     try {
-      const toStore = typeof value === 'string' ? value : JSON.stringify(value);
-      if (storageKey === 'fitbuddyai_workout_plan') {
-        try { sessionStorage.setItem(storageKey, toStore); } catch {}
-      } else {
-        try { localStorage.setItem(storageKey, toStore); } catch {}
-      }
-    } catch (_e) {
-      // ignore serialization/storage errors during restore
-    }
-  };
-
-  writeMappedIfPresent('fitbuddyai_questionnaire_progress', ['questionnaire_progress', 'fitbuddyai_questionnaire_progress']);
-  writeMappedIfPresent('fitbuddyai_workout_plan', ['workout_plan', 'fitbuddyai_workout_plan']);
-  writeMappedIfPresent('fitbuddyai_assessment_data', ['assessment_data', 'fitbuddyai_assessment_data']);
-  try {
     const currentUser = loadUserData();
     const nextUser = {
       ...(currentUser || {}),
@@ -130,11 +131,11 @@ export async function restoreUserDataFromServer(userId: string) {
       ...(payload.streak !== undefined ? { streak: payload.streak } : {})
     };
     if (Object.keys(nextUser).length > 0) {
-      try { saveUserData(nextUser, { skipBackup: true, forceSave: true } as any); } catch {}
+      try { saveUserData(nextUser, { skipBackup: true }); } catch {}
     }
-  } catch (e) {
+    } catch (e) {
     console.warn('restoreUserDataFromServer: failed to merge username/avatar/energy into in-memory user_data', e);
-  }
+    }
   // Also handle chat history: write into per-user chat key if present
   try {
     const chat = payload.chat_history ?? payload.fitbuddyai_chat ?? payload.fitbuddyai_chat_history;

@@ -51,6 +51,8 @@ const renderChatText = (text: string) => {
     if (!value) return null;
     // Reject obvious HTML/meta-character and control-character payloads
     if (/[\u0000-\u001F\u007F<>"'`]/.test(value)) return null;
+    // Reject encoded control/meta characters often used to bypass filters
+    if (/%0d|%0a|%00|%3c|%3e|%22|%27|%60/i.test(value)) return null;
 
     try {
       const isRelative = value.startsWith('/');
@@ -64,11 +66,16 @@ const renderChatText = (text: string) => {
       if (isRelative) {
         // Keep internal links internal and normalized for react-router Link
         if (parsed.origin !== window.location.origin) return null;
-        return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+        const normalized = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+        if (!/^\/[A-Za-z0-9\-._~!$&()*+,;=:@\/?%#]*$/.test(normalized)) return null;
+        return normalized;
       }
 
-      // External absolute URL
-      return parsed.toString();
+      // External absolute URL: forbid username/password and require full canonical form
+      if (parsed.username || parsed.password) return null;
+      const canonical = parsed.toString();
+      if (!/^https?:\/\/[^\s]+$/i.test(canonical)) return null;
+      return canonical;
     } catch {
       return null;
     }

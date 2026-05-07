@@ -57,6 +57,22 @@ const renderChatText = (text: string) => {
   const tokenRegex = /(\[([^\]]+)\]\(([^)]+)\))|(https?:\/\/[^\s<>()]+|\/(?!\/)[^\s<>()]+)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
+  const sanitizeChatHref = (candidate: string): string | null => {
+    const value = String(candidate || '').trim();
+    if (!value) return null;
+    if (value.startsWith('/')) {
+      return value;
+    }
+    try {
+      const parsed = new URL(value);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        return parsed.toString();
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
 
   while ((match = tokenRegex.exec(source)) !== null) {
     if (match.index > lastIndex) {
@@ -85,16 +101,17 @@ const renderChatText = (text: string) => {
     }
 
     const key = `chat-link-${output.length}`;
+    const safeHref = href ? sanitizeChatHref(href) : null;
 
-    if (href && isSafeChatHref(href)) {
+    if (safeHref && isSafeChatHref(safeHref)) {
       // Safe href: create a clickable link
       output.push(
-        isInternalChatLink(href) ? (
-          <Link key={key} to={href} className="msg-link" aria-label={sanitizeChatFragment(displayText)} title={sanitizeChatFragment(displayText)}>
+        isInternalChatLink(safeHref) ? (
+          <Link key={key} to={safeHref} className="msg-link" aria-label={sanitizeChatFragment(displayText)} title={sanitizeChatFragment(displayText)}>
             <SafeText value={displayText} />
           </Link>
         ) : (
-          <a key={key} href={href} target="_blank" rel="noopener noreferrer" className="msg-link" aria-label={sanitizeChatFragment(displayText)} title={sanitizeChatFragment(displayText)}>
+          <a key={key} href={safeHref} target="_blank" rel="noopener noreferrer" className="msg-link" aria-label={sanitizeChatFragment(displayText)} title={sanitizeChatFragment(displayText)}>
             <SafeText value={displayText} />
           </a>
         )

@@ -98,23 +98,6 @@ export async function restoreUserDataFromServer(userId: string) {
     const payload = raw?.stored ?? raw?.payload ?? raw;
     if (!payload) return;
 
-    const writeIfPresent = (key: string) => {
-      try {
-        const v = payload[key];
-        if (v === null || v === undefined) return;
-        const toStore = typeof v === 'string' ? v : JSON.stringify(v);
-        if (key === 'fitbuddyai_user_data') {
-          try { saveUserData(v?.data ?? v, { skipBackup: true, forceSave: true } as any); } catch {}
-        } else if (key === 'fitbuddyai_workout_plan') {
-          try { sessionStorage.setItem(key, toStore); } catch {}
-        } else {
-          try { localStorage.setItem(key, toStore); } catch {}
-        }
-      } catch {
-        // ignore per-call errors
-      }
-    };
-
   const writeMappedIfPresent = (storageKey: string, payloadKeys: string[]) => {
     const value = payloadKeys
       .map((key) => payload[key])

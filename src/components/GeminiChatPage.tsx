@@ -36,20 +36,17 @@ const trimTrailingPunctuation = (value: string) => {
   return value.slice(0, end);
 };
 
-const sanitizeChatFragment = (value: string) => String(value).replace(/[<>]/g, '');
+const escapeHtml = (value: string) => String(value)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;')
+  .replace(/`/g, '&#96;');
 
-const SafeText = ({ value, className }: { value: string; className?: string }) => {
-  const spanRef = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    if (!spanRef.current) return;
-    spanRef.current.textContent = sanitizeChatFragment(value);
-  }, [value]);
-
-  return <span ref={spanRef} className={className} />;
-};
-
-const renderTextFragment = (value: string, key: string) => <SafeText key={key} value={value} />;
+const renderTextFragment = (value: string, key: string) => (
+  <span key={key} dangerouslySetInnerHTML={{ __html: escapeHtml(value) }} />
+);
 
 const renderChatText = (text: string) => {
   const output: Array<React.ReactNode> = [];
@@ -118,12 +115,12 @@ const renderChatText = (text: string) => {
       // Safe href: create a clickable link
       output.push(
         isInternalChatLink(safeHref) ? (
-          <Link key={key} to={safeHref} className="msg-link" aria-label={sanitizeChatFragment(displayText)} title={sanitizeChatFragment(displayText)}>
-            <SafeText value={displayText} />
+          <Link key={key} to={safeHref} className="msg-link" aria-label={String(displayText)} title={String(displayText)}>
+            <span dangerouslySetInnerHTML={{ __html: escapeHtml(displayText) }} />
           </Link>
         ) : (
-          <a key={key} href={safeHref} target="_blank" rel="noopener noreferrer" className="msg-link" aria-label={sanitizeChatFragment(displayText)} title={sanitizeChatFragment(displayText)}>
-            <SafeText value={displayText} />
+          <a key={key} href={safeHref} target="_blank" rel="noopener noreferrer" className="msg-link" aria-label={String(displayText)} title={String(displayText)}>
+            <span dangerouslySetInnerHTML={{ __html: escapeHtml(displayText) }} />
           </a>
         )
       );

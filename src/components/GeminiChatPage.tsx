@@ -60,15 +60,26 @@ const renderChatText = (text: string) => {
   const sanitizeChatHref = (candidate: string): string | null => {
     const value = String(candidate || '').trim();
     if (!value) return null;
-    if (value.startsWith('/')) {
-      return value;
-    }
+    // Reject obvious HTML/meta-character and control-character payloads
+    if (/[\u0000-\u001F\u007F<>"'`]/.test(value)) return null;
+
     try {
-      const parsed = new URL(value);
-      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-        return parsed.toString();
+      const isRelative = value.startsWith('/');
+      const parsed = new URL(value, window.location.origin);
+
+      // Allow only web-safe protocols after canonicalization
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return null;
       }
-      return null;
+
+      if (isRelative) {
+        // Keep internal links internal and normalized for react-router Link
+        if (parsed.origin !== window.location.origin) return null;
+        return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+      }
+
+      // External absolute URL
+      return parsed.toString();
     } catch {
       return null;
     }

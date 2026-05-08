@@ -20,6 +20,7 @@ import EmailVerifyPage from './components/EmailVerifyPage';
 
 import { WorkoutPlan, DayWorkout, Exercise } from './types';
 import { loadUserData, loadWorkoutPlan, saveUserData, saveWorkoutPlan, clearUserData, getUserDataTimestamp } from './services/localStorage';
+import { removePersistedUserSnapshot } from './services/localStorage';
 import { fetchUserById } from './services/authService';
 import { format } from 'date-fns';
 import { getPrimaryType, isWorkoutCompleteForStreak, resolveWorkoutTypes } from './utils/streakUtils';
@@ -107,6 +108,8 @@ function App() {
 
   useEffect(() => {
     if (!useSupabase) return;
+    // Ensure no legacy persisted user snapshot remains in localStorage
+    try { removePersistedUserSnapshot(); } catch {}
     let cancelled = false;
 
     const hydrateSessionFromServer = async () => {

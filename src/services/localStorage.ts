@@ -287,6 +287,11 @@ export const clearUserData = (): void => {
   }
 };
 
+  // Remove any previously persisted user snapshot from localStorage (for cleanup/migration)
+  export const removePersistedUserSnapshot = (): void => {
+    try { localStorage.removeItem(STORAGE_KEYS.USER_DATA_PERSISTED); } catch (_e) {}
+  };
+
 export const loadHomeIntroEnabled = (): boolean => {
   try {
     const saved = localStorage.getItem(STORAGE_KEYS.HOME_INTRO_ENABLED);

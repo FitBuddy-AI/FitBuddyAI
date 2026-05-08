@@ -4,23 +4,7 @@ import BackgroundDots from './BackgroundDots';
 import { fetchUserById, buyShopItem } from '../services/authService';
 import { saveUserData } from '../services/localStorage';
 import { Dumbbell, Sparkles, Smile, RefreshCw, ShoppingCart, Search, Filter, Flame, ShieldCheck } from 'lucide-react';
-
-// Example shop items
-const AVATARS = [
-  { id: 'avatar1', name: 'Bot Buddy', image: 'https://api.dicebear.com/7.x/bottts/svg?seed=FitBuddyAI1', price: 100, type: 'avatar', description: 'A friendly robot avatar.' },
-  { id: 'avatar2', name: 'Dragon Head', image: 'https://api.dicebear.com/7.x/bottts/svg?seed=DragonHead', price: 200, type: 'avatar', description: 'Unleash your inner dragon!' },
-  { id: 'avatar3', name: 'Duolingo Owl', image: 'https://api.dicebear.com/7.x/bottts/svg?seed=Duolingo', price: 250, type: 'avatar', description: 'Inspired by the language learning legend.' },
-  { id: 'avatar4', name: 'Neo Cat', image: 'https://api.dicebear.com/7.x/croodles/svg?seed=NeoCat', price: 120, type: 'avatar', description: 'A sleek cyber cat.' },
-  { id: 'avatar5', name: 'Mountain Goat', image: 'https://api.dicebear.com/7.x/bottts/svg?seed=Goat', price: 140, type: 'avatar', description: 'Sturdy and sure-footed.' },
-  { id: 'avatar6', name: 'Galaxy Fox', image: 'https://api.dicebear.com/7.x/bottts/svg?seed=GalaxyFox', price: 220, type: 'avatar', description: 'Out-of-this-world style.' },
-  { id: 'avatar7', name: 'Pixel Pup', image: 'https://api.dicebear.com/7.x/bottts/svg?seed=PixelPup', price: 80, type: 'avatar', description: 'Cute pixel-styled puppy.' },
-  { id: 'avatar8', name: 'Samurai', image: 'https://api.dicebear.com/7.x/bottts/svg?seed=Samurai', price: 300, type: 'avatar', description: 'Honor and style.' },
-  { id: 'avatar9', name: 'Astronaut', image: 'https://api.dicebear.com/7.x/bottts/svg?seed=Astronaut', price: 260, type: 'avatar', description: 'Reach for the stars.' },
-  { id: 'avatar10', name: 'Vintage Robot', image: 'https://api.dicebear.com/7.x/bottts/svg?seed=VintageBot', price: 110, type: 'avatar', description: 'Retro charm.' },
-  { id: 'avatar11', name: 'Neon Ninja', image: 'https://api.dicebear.com/7.x/bottts/svg?seed=NeonNinja', price: 210, type: 'avatar', description: 'Stealthy and bright.' },
-  { id: 'avatar12', name: 'Forest Sprite', image: 'https://api.dicebear.com/7.x/bottts/svg?seed=ForestSprite', price: 130, type: 'avatar', description: 'Whimsical woodland friend.' },
-  { id: 'avatar13', name: 'Forest Sprite', image: '/images/ChatGPT_Image_Clan_Of_27_Fire.png', price: 130, type: 'avatar', description: 'Whimsical woodland friend.' }
-];
+import { SHOP_AVATARS } from '../data/avatarCatalog';
 
 const STREAK_SAVER_OPTIONS = [
   { id: 'streak-saver-1', name: 'Streak Saver 1x', quantity: 1, price: 1000 },
@@ -59,6 +43,14 @@ const ShopPage: React.FC<ShopPageProps> = ({ user, onPurchase, onRedeemStreakSav
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const tabsRef = useRef<HTMLDivElement | null>(null);
   const indicatorRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.body.classList.toggle('shop-preview-open', Boolean(preview));
+    return () => {
+      document.body.classList.remove('shop-preview-open');
+    };
+  }, [preview]);
 
   const hasLocalUserOverride = () => {
     if (typeof window === 'undefined') return false;
@@ -272,7 +264,7 @@ const ShopPage: React.FC<ShopPageProps> = ({ user, onPurchase, onRedeemStreakSav
             </div>
           </div>
         )}
-        {selectedTab === 'avatars' && filteredItems(AVATARS).map(item => {
+        {selectedTab === 'avatars' && filteredItems(SHOP_AVATARS).map(item => {
           const alreadyOwned = Array.isArray(user.inventory) && user.inventory.some((inv: any) => inv.id === item.id);
           return (
             <div className="shop-card" key={item.id} onClick={()=>setPreview(item)}>
@@ -320,53 +312,66 @@ const ShopPage: React.FC<ShopPageProps> = ({ user, onPurchase, onRedeemStreakSav
       </div>
 
       {/* Preview modal */}
-      {preview && (
-        <div className="shop-preview" onClick={()=>setPreview(null)}>
-          <div className="preview-card" onClick={(e)=>e.stopPropagation()}>
-            <button className="preview-close" onClick={()=>setPreview(null)}>✕</button>
-            <div className="preview-body">
-              <div className="preview-demo">
-                {/* Avatar preview if present */}
-                {preview.type === 'avatar' && preview.image && (
-                  <img src={preview.image} alt={preview.name} className="preview-img" />
-                )}
+      {preview && (() => {
+        const previewOwned = Array.isArray(user?.inventory) && user.inventory.some((inv: any) => inv.id === preview.id);
+        return (
+          <div className="shop-preview" onClick={()=>setPreview(null)}>
+            <div className="preview-card" onClick={(e)=>e.stopPropagation()}>
+              <button className="preview-close" onClick={()=>setPreview(null)}>✕</button>
+              <div className="preview-body">
+                <div className="preview-demo">
+                  {/* Avatar preview if present */}
+                  {preview.type === 'avatar' && preview.image && (
+                    <img src={preview.image} alt={preview.name} className="preview-img" />
+                  )}
 
-                {/* Powerup demos mapped by id */}
-                {preview.type === 'powerup' && (
-                  <div className="powerup-demo">
-                    {preview.id === 'spinpfp' && <div className="preview-demo-box spin-anim">⟳</div>}
-                    {preview.id === 'sparkle' && <div className="preview-demo-box dots-anim"><span></span><span></span><span></span></div>}
-                    {preview.id === 'confetti' && <div className="preview-demo-box confetti-anim">🎉</div>}
-                    {preview.id === 'glow' && <div className="preview-demo-box glow-anim">✦</div>}
-                    {preview.id === 'trail' && <div className="preview-demo-box trail-anim">➤</div>}
-                    {preview.id === 'animated-frames' && <div className="preview-demo-box frames-anim">▦</div>}
-                    {preview.id === 'voice-chime' && <div className="preview-demo-box chime-anim">🔔</div>}
-                    {preview.id === 'vfx' && <div className="preview-demo-box vfx-anim">✨</div>}
-                    {preview.id === 'status-glow' && <div className="preview-demo-box statusglow-anim">●</div>}
-                    {/* default fallback */}
-                    {!['spinpfp','sparkle','confetti','glow','trail','animated-frames','voice-chime','vfx','status-glow'].includes(preview.id) && (
-                      <div className="preview-demo-box">Preview</div>
-                    )}
+                  {/* Powerup demos mapped by id */}
+                  {preview.type === 'powerup' && (
+                    <div className="powerup-demo">
+                      {preview.id === 'spinpfp' && <div className="preview-demo-box spin-anim">⟳</div>}
+                      {preview.id === 'sparkle' && <div className="preview-demo-box dots-anim"><span></span><span></span><span></span></div>}
+                      {preview.id === 'confetti' && <div className="preview-demo-box confetti-anim">🎉</div>}
+                      {preview.id === 'glow' && <div className="preview-demo-box glow-anim">✦</div>}
+                      {preview.id === 'trail' && <div className="preview-demo-box trail-anim">➤</div>}
+                      {preview.id === 'animated-frames' && <div className="preview-demo-box frames-anim">▦</div>}
+                      {preview.id === 'voice-chime' && <div className="preview-demo-box chime-anim">🔔</div>}
+                      {preview.id === 'vfx' && <div className="preview-demo-box vfx-anim">✨</div>}
+                      {preview.id === 'status-glow' && <div className="preview-demo-box statusglow-anim">●</div>}
+                      {/* default fallback */}
+                      {!['spinpfp','sparkle','confetti','glow','trail','animated-frames','voice-chime','vfx','status-glow'].includes(preview.id) && (
+                        <div className="preview-demo-box">Preview</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <h3>{preview.name}</h3>
+                <p>{preview.description}</p>
+                <div className="preview-actions">
+                  <span className="price-badge">⚡ {preview.price}</span>
+                  <div className="preview-actions-row">
+                    <button
+                      className="shop-buy-btn"
+                      disabled={previewOwned}
+                      onClick={()=>{
+                        if (previewOwned) return;
+                        handlePurchase(preview);
+                        setPreview(null);
+                      }}
+                    >
+                      {previewOwned ? 'Owned' : 'Buy'}
+                    </button>
+                    <button className="shop-buy-btn" onClick={()=>{ 
+                      // Try-on: dispatch a custom event that header listens to
+                      window.dispatchEvent(new CustomEvent('shop-try-on', { detail: { preview } }));
+                    }}>Try On</button>
                   </div>
-                )}
-              </div>
-
-              <h3>{preview.name}</h3>
-              <p>{preview.description}</p>
-              <div className="preview-actions">
-                <span className="price-badge">⚡ {preview.price}</span>
-                <div className="preview-actions-row">
-                  <button className="shop-buy-btn" onClick={()=>{ handlePurchase(preview); setPreview(null); }}>Buy</button>
-                  <button className="shop-buy-btn" onClick={()=>{ 
-                    // Try-on: dispatch a custom event that header listens to
-                    window.dispatchEvent(new CustomEvent('shop-try-on', { detail: { preview } }));
-                  }}>Try On</button>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

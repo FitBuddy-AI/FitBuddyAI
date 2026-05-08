@@ -563,16 +563,76 @@ app.post('/api/user/buy', userBuyLimiter, async (req, res) => {
       return res.status(403).json({ message: 'Token does not match user.' });
     }
 
-    const { data: updatedUser, error: purchaseError } = await supabase.rpc('buy_shop_item_atomic', {
-      p_user_id: id,
-      p_item: item
-    });
+    const price = Number(item.price || 0);
+    if (!Number.isFinite(price) || price < 0) {
+      return res.status(400).json({ message: 'Invalid item price.' });
+    }
 
-    if (purchaseError) {
-      console.error('[authServer] /api/user/buy rpc error', purchaseError);
-      if (String(purchaseError.message || '').toLowerCase().includes('insufficient energy')) {
-        return res.status(400).json({ message: 'Not enough energy.' });
+    const { data: userData, error: fetchErr } = await supabase
+      .from('fitbuddyai_userdata')
+      .select('*')
+      .eq('user_id', id)
+      .limit(1)
+      .maybeSingle();
+    if (fetchErr) {
+      console.error('[authServer] /api/user/buy fetch error', fetchErr);
+      return res.status(500).json({ message: 'Failed to load user.' });
+    }
+    if (!userData) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const currentEnergy = Number(userData.energy || 0);
+    if (currentEnergy < price) {
+      return res.status(400).json({ message: 'Not enough energy.' });
+    }
+
+    const existingInventory = Array.isArray(userData.inventory) ? userData.inventory : [];
+    const itemId = String(item.id || '');
+    const itemQuantity = Number.isFinite(Number(item.quantity ?? item.count)) ? Math.max(Number(item.quantity ?? item.count), 1) : 1;
+    const purchasedItem = {
+      ...item,
+      price,
+      quantity: itemQuantity,
+      purchased_at: new Date().toISOString()
+    };
+
+    let nextInventory = [...existingInventory, purchasedItem];
+    if (itemId.startsWith('streak-saver')) {
+      const merged = [];
+      let mergedExisting = false;
+      for (const existingItem of existingInventory) {
+        if (!mergedExisting && String(existingItem?.id || '').startsWith('streak-saver')) {
+          const existingQuantity = Number(existingItem?.quantity ?? existingItem?.count ?? 1) || 1;
+          merged.push({
+            ...existingItem,
+            price,
+            quantity: existingQuantity + itemQuantity,
+            purchased_at: new Date().toISOString()
+          });
+          mergedExisting = true;
+        } else {
+          merged.push(existingItem);
+        }
       }
+      if (!mergedExisting) {
+        merged.push(purchasedItem);
+      }
+      nextInventory = merged;
+    }
+
+    const newEnergy = currentEnergy - price;
+    const { data: updatedUser, error: updateErr } = await supabase
+      .from('fitbuddyai_userdata')
+      .update({ energy: newEnergy, inventory: nextInventory })
+      .eq('user_id', id)
+      .select('*')
+      .maybeSingle();
+    if (updateErr) {
+      console.error('[authServer] /api/user/buy update error', updateErr);
+      return res.status(500).json({ message: 'Failed to save purchase.' });
+    }
+    if (!updatedUser) {
       return res.status(500).json({ message: 'Failed to save purchase.' });
     }
 

@@ -31,26 +31,13 @@ const getStoredUserDataSnapshot = (): { data: any; timestamp: number } | null =>
     if (typeof window === 'undefined') return null;
     // Prefer in-memory global snapshot if present
     const fallback = (window as any).fitbuddyai_user_data;
-    if (fallback && typeof fallback === 'object') {
-      const data = (fallback as any).data ?? fallback;
-      if (data) {
-        return {
-          data,
-          timestamp: Number((fallback as any).timestamp || 0) || 0
-        };
-      }
-    }
-    // Try persisted localStorage keys (new key first, then legacy)
-    try {
-      const raw = localStorage.getItem(STORAGE_KEYS.USER_DATA_PERSISTED) || localStorage.getItem(STORAGE_KEYS.USER_DATA);
-      if (raw) {
-        const parsed = safeParseStored<{ data: any; timestamp: number }>(raw);
-        if (parsed && parsed.data) return { data: parsed.data, timestamp: parsed.timestamp || 0 };
-        // If parsed is a plain user object (not wrapped), treat it as data
-        if (parsed && typeof parsed === 'object') return { data: parsed, timestamp: 0 };
-      }
-    } catch (_e) {}
-    return null;
+    if (!fallback || typeof fallback !== 'object') return null;
+    const data = (fallback as any).data ?? fallback;
+    if (!data) return null;
+    return {
+      data,
+      timestamp: Number((fallback as any).timestamp || 0) || 0
+    };
   } catch {
     return null;
   }
@@ -59,6 +46,7 @@ const getStoredUserDataSnapshot = (): { data: any; timestamp: number } | null =>
 const purgeLegacyUserStorage = () => {
   try { sessionStorage.removeItem(STORAGE_KEYS.USER_DATA); } catch {}
   try { localStorage.removeItem(STORAGE_KEYS.USER_DATA); } catch {}
+  try { localStorage.removeItem(STORAGE_KEYS.USER_DATA_PERSISTED); } catch {}
 };
 
 export const getUserDataTimestamp = (): number => {
@@ -216,12 +204,8 @@ export const saveUserData = (userData: any, opts?: { skipBackup?: boolean }): vo
     toStore.data = ensureUserId(toStore.data);
     const payload = { ...toStore, timestamp: Date.now() };
     userDataCache = payload;
-    // Persist a non-sensitive snapshot for cross-tab and session restore.
-    try {
-      // Do not persist tokens here; payload contains only profile data and timestamp.
-      localStorage.setItem(STORAGE_KEYS.USER_DATA_PERSISTED, JSON.stringify(payload));
-      try { (window as any).fitbuddyai_user_data = payload; } catch {}
-    } catch (_e) {}
+    // Keep an in-memory global snapshot for the current window only.
+    try { (window as any).fitbuddyai_user_data = payload; } catch {}
     // Remove legacy single-key storage if present
     purgeLegacyUserStorage();
     // Broadcast to other tabs so they can sync without exposing the full profile on window

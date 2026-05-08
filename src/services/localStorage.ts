@@ -29,6 +29,9 @@ const getStoredUserDataSnapshot = (): { data: any; timestamp: number } | null =>
   try {
     if (userDataCache) return userDataCache;
     if (typeof window === 'undefined') return null;
+    const stored = sessionStorage.getItem(STORAGE_KEYS.USER_DATA);
+    const parsed = safeParseStored<{ data: any; timestamp: number }>(stored);
+    if (parsed && parsed.data) return parsed;
     const fallback = (window as any).fitbuddyai_user_data;
     if (!fallback || typeof fallback !== 'object') return null;
     const data = (fallback as any).data ?? fallback;
@@ -204,6 +207,7 @@ export const saveUserData = (userData: any, opts?: { skipBackup?: boolean }): vo
     const payload = { ...toStore, timestamp: Date.now() };
     userDataCache = payload;
     purgeLegacyUserStorage();
+    try { sessionStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(payload)); } catch {}
     // Broadcast to other tabs so they can sync without exposing the full profile on window
     try {
       const bc = new BroadcastChannel('fitbuddyai');

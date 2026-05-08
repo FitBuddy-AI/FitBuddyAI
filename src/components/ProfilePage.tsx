@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import './ProfilePage.css';
 import { getCurrentUser, fetchUserById } from '../services/authService';
 import { ensureUserId } from '../utils/userHelpers';
+import { SHOP_AVATARS, SHOP_AVATAR_URLS } from '../data/avatarCatalog';
 // Supabase auth metadata updates are handled server-side; no client import needed here
 import { useNavigate } from 'react-router-dom';
 import SignOutButton from './SignOutButton';
@@ -80,11 +81,12 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userData, onProfileUpdate, pr
   }
 
   // Shop avatars (must match ShopPage)
-  const shopAvatars = [
-    'https://api.dicebear.com/7.x/bottts/svg?seed=FitBuddyAI1',
-    'https://api.dicebear.com/7.x/bottts/svg?seed=DragonHead',
-    'https://api.dicebear.com/7.x/bottts/svg?seed=Duolingo',
-  ];
+  const shopAvatars = SHOP_AVATAR_URLS;
+  const ownedAvatarIds = new Set(
+    Array.isArray(user.inventory)
+      ? user.inventory.map((item: any) => String(item?.id || '')).filter(Boolean)
+      : []
+  );
   const premadeAvatars = [
     '/images/fitbuddy_head.png',
     ...shopAvatars,
@@ -261,8 +263,8 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userData, onProfileUpdate, pr
           <>
             <div className="avatar-select-row">
               {premadeAvatars.map((url) => {
-                const isShopAvatar = shopAvatars.includes(url);
-                const ownsAvatar = !isShopAvatar || (Array.isArray(user.inventory) && user.inventory.some((item: any) => item.image === url));
+                const shopAvatar = SHOP_AVATARS.find((avatar) => avatar.image === url);
+                const ownsAvatar = !shopAvatar || ownedAvatarIds.has(shopAvatar.id);
                 return (
                   <button
                     key={url}

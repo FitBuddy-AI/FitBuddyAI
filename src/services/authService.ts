@@ -35,22 +35,34 @@ export async function buyShopItem(id: string, item: any): Promise<User | null> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, item: safeItem })
     });
-    const res = await fetch(`/api/user/${encodeURIComponent(id)}?action=buy`, reqInit);
-    if (!res.ok) {
+    const purchaseUrlCandidates = ['/api/user/buy', `/api/user/${encodeURIComponent(id)}?action=buy`];
+    let lastError: any = null;
+
+    for (const purchaseUrl of purchaseUrlCandidates) {
+      const res = await fetch(purchaseUrl, reqInit);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.user) {
+          try { saveUserData({ data: data.user }); } catch {}
+          return data.user;
+        }
+        return null;
+      }
+
       // Attempt to read structured error code from server
       try {
         const err = await res.json();
-        console.warn('[buyShopItem] server error', err.code || err.message || res.status);
+        lastError = err;
+        console.warn('[buyShopItem] server error', err.code || err.message || res.status, 'via', purchaseUrl);
+        if (res.status !== 404) break;
       } catch {
-        console.warn('[buyShopItem] server error status', res.status);
+        lastError = { status: res.status };
+        console.warn('[buyShopItem] server error status', res.status, 'via', purchaseUrl);
+        if (res.status !== 404) break;
       }
-      return null;
     }
-    const data = await res.json();
-    if (data.user) {
-      try { saveUserData({ data: data.user }); } catch {}
-      return data.user;
-    }
+
+    if (lastError) return null;
     return null;
   } catch {
     return null;

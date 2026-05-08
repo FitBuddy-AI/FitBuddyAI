@@ -1,5 +1,6 @@
 {
     "chat.tools.terminal.autoApprove": {
-        "codeql": true
+        "codeql": true,
+        "Get-CimInstance": true
     }
 }
